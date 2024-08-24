@@ -3,6 +3,9 @@ name = "sumtype"
 description = "Generate zerocost sumtype of iterators or closures"
 version = "0.1.0"
 edition = "2021"
+keywords = ["macros", "zerocost"]
+categories = ["data-structures"]
+license = "MIT"
 
 [lib]
 proc-macro = true
