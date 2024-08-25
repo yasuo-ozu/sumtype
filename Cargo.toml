@@ -1,10 +1,12 @@
 [package]
 name = "sumtype"
 description = "Generate zerocost sumtype of iterators or closures"
-version = "0.1.0"
+authors = ["Yasuo Ozu <yasuo@ozu.email>"]
+version = "0.1.1"
+repository = "https://github.com/yasuo-ozu/sumtype"
 edition = "2021"
-keywords = ["macros", "zerocost"]
-categories = ["data-structures"]
+keywords = ["macros", "zerocost", "enum", "union-type", "iterator"]
+categories = ["data-structures", "no-std::no-alloc", "rust-patterns"]
 license = "MIT"
 
 [lib]
