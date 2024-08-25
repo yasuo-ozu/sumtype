@@ -1,9 +1,11 @@
-# sumtype crate [![Latest Version]][crates.io] [![Documentation]][docs.rs]
+# sumtype crate [![Latest Version]][crates.io] [![Documentation]][docs.rs] [![GitHub Actions]][actions]
 
 [Latest Version]: https://img.shields.io/crates/v/sumtype.svg
 [crates.io]: https://crates.io/crates/sumtype
 [Documentation]: https://img.shields.io/docsrs/sumtype
 [docs.rs]: https://docs.rs/sumtype/latest/sumtype/
+[GitHub Actions]: https://github.com/yasuo-ozu/sumtype/actions/workflows/rust.yml/badge.svg
+[actions]: https://github.com/yasuo-ozu/sumtype/actions/workflows/rust.yml
 
 In Rust, when a function needs to return different types of iterators based on its arguments, it can be challenging because even if the iterators return the same type of elements, they are considered to have different types. This makes it impossible to simply use a return statement to return them directly. A common solution to this problem is to use `Box<dyn Iterator>`, but this approach has two drawbacks: it incurs extra heap memory usage, and it does not provide zero-cost abstraction. Additionally, the elements returned by the iterator must have a 'static lifetime.
 
