@@ -104,7 +104,12 @@ trait ProcessTree: Sized {
         is_module: bool,
     ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>);
 
-    fn emit_items(mut self, generics: Option<&Generics>, is_module: bool) -> (TokenStream, Self) {
+    fn emit_items(
+        mut self,
+        generics: Option<&Generics>,
+        is_module: bool,
+        vis: Visibility,
+    ) -> (TokenStream, Self) {
         let r = random();
         let enum_ident = Ident::new(&format!("__Sumtype_Enum_{}", r), Span::call_site());
         let typeref_ident =
@@ -166,7 +171,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                 }
                 trait #typeref_ident <#(#impl_generics),*> { type Type; }
                 #[derive(Clone, Debug)]
-                enum #enum_ident <#(#impl_generics,)*#(#ty_params),*> {
+                #vis enum #enum_ident <#(#impl_generics,)*#(#ty_params),*> {
                     #(for (ident, ty) in &variants) {
                         #ident ( #ty ),
                     }
@@ -361,31 +366,34 @@ const _: () = {
 
 fn inner(_args: Arguments, input: TokenStream) -> TokenStream {
     if let Ok(block) = parse2::<Block>(input.clone()) {
-        let (out, block) = block.emit_items(None, false);
+        let (out, block) = block.emit_items(None, false, Visibility::Inherited);
         quote! { #out #block }
     } else if let Ok(item_trait) = parse2::<ItemTrait>(input.clone()) {
         let generics = item_trait.generics.clone();
-        let (out, item) = Item::Trait(item_trait).emit_items(Some(&generics), false);
+        let vis = item_trait.vis.clone();
+        let (out, item) = Item::Trait(item_trait).emit_items(Some(&generics), false, vis);
         quote! { #out #item }
     } else if let Ok(item_impl) = parse2::<ItemImpl>(input.clone()) {
         let generics = item_impl.generics.clone();
-        let (out, item) = Item::Impl(item_impl).emit_items(Some(&generics), false);
+        let (out, item) =
+            Item::Impl(item_impl).emit_items(Some(&generics), false, Visibility::Inherited);
         quote! { #out #item }
     } else if let Ok(item_fn) = parse2::<ItemFn>(input.clone()) {
         let generics = item_fn.sig.generics.clone();
-        let (out, item) = Item::Fn(item_fn).emit_items(Some(&generics), false);
+        let vis = item_fn.vis.clone();
+        let (out, item) = Item::Fn(item_fn).emit_items(Some(&generics), false, vis);
         quote! { #out #item }
     } else if let Ok(item_mod) = parse2::<ItemMod>(input.clone()) {
-        let (out, item) = Item::Mod(item_mod).emit_items(None, true);
+        let (out, item) = Item::Mod(item_mod).emit_items(None, true, Visibility::Inherited);
         quote! { #out #item }
     } else if let Ok(item) = parse2::<Item>(input.clone()) {
-        let (out, item) = item.emit_items(None, false);
+        let (out, item) = item.emit_items(None, false, Visibility::Inherited);
         quote! { #out #item }
     } else if let Ok(stmt) = parse2::<Stmt>(input.clone()) {
-        let (out, stmt) = stmt.emit_items(None, false);
+        let (out, stmt) = stmt.emit_items(None, false, Visibility::Inherited);
         quote! { #out #stmt }
     } else {
-        abort!(input.span(), "This elementn is not supported")
+        abort!(input.span(), "This element is not supported")
     }
 }
 
