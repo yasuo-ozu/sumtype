@@ -1,3 +1,5 @@
+#![doc = include_str!("README.md")]
+
 use derive_syn_parse::Parse;
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::Span;
