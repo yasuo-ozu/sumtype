@@ -32,9 +32,9 @@ fn conditional_iterator(flag: bool) -> impl Iterator<Item = i32> {
 }
 ```
 
-In this example, the `#[sumtype]` attribute generates a sum type that can wrap both iterator types. The sumtype! macro is used to wrap the expressions, allowing them to be treated as the same type within the function. Because the sum type uses a simple enum internally, it avoids additional heap allocations. If the `flag` is known at compile time, the compiler can optimize the returned iterator without incurring extra abstraction costs.
+In this example, the `#[sumtype]` attribute generates a sum type that can wrap both iterator types. The `sumtype!` macro is used to wrap the expressions, allowing them to be treated as the same type within the function. Because the sum type uses a simple enum internally, it avoids additional heap allocations. If the `flag` is known at compile time, the compiler can optimize the returned iterator without incurring extra abstraction costs.
 
-Additionally, sumtype can be used not only in functions but also in other contexts. For example, by using #[sumtype] in an expression block within a mathematical formula, you can initialize different types of Iterators based on certain conditions and assign them to a specific variable.
+Additionally, sumtype can be used not only in functions but also in other contexts. For example, by using `#[sumtype]` in an expression block within a mathematical formula, you can initialize different types of Iterators based on certain conditions and assign them to a specific variable.
 
 Here's an example to illustrate this:
 
@@ -56,4 +56,79 @@ for value in iter {
 }
 ```
 
-In this example, the #[sumtype] attribute is applied to an expression block, allowing different types of iterators to be initialized based on the condition. These are then wrapped using the sumtype! macro and assigned to the iter variable, making it possible to work with them uniformly throughout the code. Unfortunately, this feature requires nightly Rust and `#![feature(proc_macro_hygiene)]`, see [Tracking issue for procedural macros and "hygiene 2.0"](https://github.com/rust-lang/rust/issues/54727).
+In this example, the `#[sumtype]` attribute is applied to an expression block, allowing different types of iterators to be initialized based on the condition. These are then wrapped using the sumtype! macro and assigned to the iter variable, making it possible to work with them uniformly throughout the code. Unfortunately, this feature requires nightly Rust and `#![feature(proc_macro_hygiene)]`, see [Tracking issue for procedural macros and "hygiene 2.0"](https://github.com/rust-lang/rust/issues/54727).
+
+Additionally, `#[sumtype]` can be used when defining traits as well as when implementing them. Here are examples for each case:
+
+Using `#[sumtype]` with a trait definition:
+
+```
+# use sumtype::sumtype;
+#[sumtype]
+trait MyTrait {
+    fn get_iterator(&self, flag: bool) -> impl Iterator<Item = i32> {
+        if flag {
+            sumtype!((0..5)) // Wraps the range iterator
+        } else {
+            sumtype!(vec![10, 20, 30].into_iter()) // Wraps the vector iterator
+        }
+    }
+}
+```
+
+In this example, `#[sumtype]` is applied to a trait definition. This could be useful for scenarios where you want to create sum types that can represent different implementations of a trait.
+
+Using `#[sumtype]` with a struct definition:
+
+```
+# use sumtype::sumtype;
+#[sumtype]
+trait MyTrait {
+    fn get_iterator(&self, flag: bool) -> impl Iterator<Item = i32> {
+        if flag {
+            sumtype!((0..5)) // Wraps the range iterator
+        } else {
+            sumtype!(vec![10, 20, 30].into_iter()) // Wraps the vector iterator
+        }
+    }
+}
+struct StructA;
+
+#[sumtype]
+impl MyTrait for StructA {
+    fn get_iterator(&self, _flag: bool) -> impl Iterator<Item = i32> {
+        sumtype!((0..5)) // Wraps a range iterator
+    }
+}
+```
+
+Here, MyStruct contains a field that holds an iterator. Depending on a condition, it wraps different iterators using `sumtype!`.
+
+Using `#[sumtype]` with an module definition:
+
+```ignore
+# use sumtype::sumtype;
+#[sumtype]
+mod my_module {
+    pub struct MyStruct {
+        iter: sumtype!(),
+    }
+
+    impl MyStruct {
+        pub fn new(flag: bool) -> Self {
+            let iter = if flag {
+                sumtype!(0..5, std::ops::Range<u32>) // Wraps a range iterator
+            } else {
+                sumtype!(vec![10, 20, 30].into_iter(), std::vec::IntoIter<u32>) // Wraps a vector iterator
+            };
+            MyStruct { iter }
+        }
+
+        pub fn iterate(self) {
+            for value in self.iter {
+                println!("{}", value);
+            }
+        }
+    }
+}
+```

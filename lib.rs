@@ -16,14 +16,21 @@ fn random() -> u64 {
         .finish()
 }
 
-fn path_of_ident(ident: Ident) -> Path {
+fn path_of_ident(ident: Ident, is_super: bool) -> Path {
+    let mut segments = vec![];
+    if is_super {
+        segments.push(PathSegment {
+            ident: Ident::new("super", Span::call_site()),
+            arguments: PathArguments::None,
+        });
+    }
+    segments.push(PathSegment {
+        ident,
+        arguments: PathArguments::None,
+    });
     Path {
         leading_colon: None,
-        segments: std::iter::once(PathSegment {
-            ident,
-            arguments: PathArguments::None,
-        })
-        .collect(),
+        segments: segments.into_iter().collect(),
     }
 }
 
@@ -94,17 +101,19 @@ trait ProcessTree: Sized {
         enum_path: &Path,
         typeref_path: &Path,
         generics: Option<&Generics>,
+        is_module: bool,
     ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>);
 
-    fn emit_items(mut self, generics: Option<&Generics>) -> (TokenStream, Self) {
+    fn emit_items(mut self, generics: Option<&Generics>, is_module: bool) -> (TokenStream, Self) {
         let r = random();
         let enum_ident = Ident::new(&format!("__Sumtype_Enum_{}", r), Span::call_site());
         let typeref_ident =
             Ident::new(&format!("__Sumtype_TypeRef_Trait_{}", r), Span::call_site());
         let (found_exprs, type_emitted) = self.collect_inline_macro(
-            &path_of_ident(enum_ident.clone()),
-            &path_of_ident(typeref_ident.clone()),
+            &path_of_ident(enum_ident.clone(), is_module),
+            &path_of_ident(typeref_ident.clone(), is_module),
             generics,
+            is_module,
         );
         let reftypes = found_exprs
             .iter()
@@ -156,6 +165,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                     struct #reft;
                 }
                 trait #typeref_ident <#(#impl_generics),*> { type Type; }
+                #[derive(Clone, Debug)]
                 enum #enum_ident <#(#impl_generics,)*#(#ty_params),*> {
                     #(for (ident, ty) in &variants) {
                         #ident ( #ty ),
@@ -178,7 +188,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                     type Type = __SumType_Item;
                 }
                 #{ SumTypeImpl::Iterator.gen(
-                    &path_of_ident(enum_ident),
+                    &path_of_ident(enum_ident, false),
                     ty_params.as_slice(),
                     variants.as_slice(),
                     generics
@@ -197,6 +207,7 @@ const _: () = {
         found_exprs: Vec<(Span, Ident, Option<Ident>)>,
         emit_type: Vec<Span>,
         generics: Option<&'a Generics>,
+        is_module: bool,
     }
 
     impl ProcessTree for Block {
@@ -205,8 +216,9 @@ const _: () = {
             enum_path: &Path,
             typeref_path: &Path,
             generics: Option<&Generics>,
+            is_module: bool,
         ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>) {
-            let mut visitor = Visitor::new(enum_path, typeref_path, generics);
+            let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_block_mut(self);
             (visitor.found_exprs, visitor.emit_type)
         }
@@ -218,8 +230,9 @@ const _: () = {
             enum_path: &Path,
             typeref_path: &Path,
             generics: Option<&Generics>,
+            is_module: bool,
         ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>) {
-            let mut visitor = Visitor::new(enum_path, typeref_path, generics);
+            let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_item_mut(self);
             (visitor.found_exprs, visitor.emit_type)
         }
@@ -231,8 +244,9 @@ const _: () = {
             enum_path: &Path,
             typeref_path: &Path,
             generics: Option<&Generics>,
+            is_module: bool,
         ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>) {
-            let mut visitor = Visitor::new(enum_path, typeref_path, generics);
+            let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_stmt_mut(self);
             (visitor.found_exprs, visitor.emit_type)
         }
@@ -243,6 +257,7 @@ const _: () = {
             enum_path: &'a Path,
             typeref_path: &'a Path,
             generics: Option<&'a Generics>,
+            is_module: bool,
         ) -> Self {
             Self {
                 enum_path,
@@ -250,6 +265,7 @@ const _: () = {
                 found_exprs: Vec::new(),
                 emit_type: Vec::new(),
                 generics,
+                is_module,
             }
         }
         fn do_type_macro(&mut self, mac: &Macro) -> TokenStream {
@@ -280,6 +296,7 @@ const _: () = {
                 &format!("__SumType_RefType_{}_{}", random(), n),
                 Span::call_site(),
             );
+            let reftype_path = path_of_ident(reftype_ident.clone(), self.is_module);
             let id_fn_ident =
                 Ident::new(&format!("__sum_type_id_fn_{}", random()), Span::call_site());
             let (impl_generics, ty_generics, where_clause) = split_for_impl(self.generics);
@@ -291,7 +308,7 @@ const _: () = {
             quote! {
                 {
                     #(if let Some(ty) = &arg.ty){
-                        impl<#(#impl_generics,)*> #{&self.typeref_path} <#(#ty_generics),*> for #reftype_ident
+                        impl<#(#impl_generics,)*> #{&self.typeref_path} <#(#ty_generics),*> for #reftype_path
                             #(if where_clause.len() > 0) {
                                 where #(#where_clause,)*
                             }
@@ -309,62 +326,63 @@ const _: () = {
     impl<'a> VisitMut for Visitor<'a> {
         fn visit_type_mut(&mut self, ty: &mut Type) {
             if let Type::Macro(tm) = &*ty {
-                let out = self.do_type_macro(&tm.mac);
-                *ty = parse2(out).unwrap();
-            } else {
-                syn::visit_mut::visit_type_mut(self, ty);
+                if tm.mac.path.is_ident("sumtype") {
+                    let out = self.do_type_macro(&tm.mac);
+                    *ty = parse2(out).unwrap();
+                    return;
+                }
             }
+            syn::visit_mut::visit_type_mut(self, ty);
         }
 
         fn visit_expr_mut(&mut self, expr: &mut Expr) {
             if let Expr::Macro(em) = &*expr {
-                let out = self.do_expr_macro(&em.mac);
-                *expr = parse2(out).unwrap();
-            } else {
-                syn::visit_mut::visit_expr_mut(self, expr);
+                if em.mac.path.is_ident("sumtype") {
+                    let out = self.do_expr_macro(&em.mac);
+                    *expr = parse2(out).unwrap();
+                    return;
+                }
             }
+            syn::visit_mut::visit_expr_mut(self, expr);
         }
 
         fn visit_stmt_mut(&mut self, stmt: &mut Stmt) {
             if let Stmt::Macro(sm) = &*stmt {
-                let out = self.do_expr_macro(&sm.mac);
-                *stmt = parse2(out).unwrap();
-            } else {
-                syn::visit_mut::visit_stmt_mut(self, stmt);
+                if sm.mac.path.is_ident("sumtype") {
+                    let out = self.do_expr_macro(&sm.mac);
+                    *stmt = parse2(out).unwrap();
+                    return;
+                }
             }
+            syn::visit_mut::visit_stmt_mut(self, stmt);
         }
     }
 };
 
 fn inner(_args: Arguments, input: TokenStream) -> TokenStream {
     if let Ok(block) = parse2::<Block>(input.clone()) {
-        let (out, block) = block.emit_items(None);
+        let (out, block) = block.emit_items(None, false);
         quote! { #out #block }
-    } else if let Ok(item_enum) = parse2::<ItemEnum>(input.clone()) {
-        let generics = item_enum.generics.clone();
-        let (out, item) = Item::Enum(item_enum).emit_items(Some(&generics));
-        quote! { #out #item }
-    } else if let Ok(item_struct) = parse2::<ItemStruct>(input.clone()) {
-        let generics = item_struct.generics.clone();
-        let (out, item) = Item::Struct(item_struct).emit_items(Some(&generics));
+    } else if let Ok(item_trait) = parse2::<ItemTrait>(input.clone()) {
+        let generics = item_trait.generics.clone();
+        let (out, item) = Item::Trait(item_trait).emit_items(Some(&generics), false);
         quote! { #out #item }
     } else if let Ok(item_impl) = parse2::<ItemImpl>(input.clone()) {
         let generics = item_impl.generics.clone();
-        let (out, item) = Item::Impl(item_impl).emit_items(Some(&generics));
-        quote! { #out #item }
-    } else if let Ok(item_union) = parse2::<ItemUnion>(input.clone()) {
-        let generics = item_union.generics.clone();
-        let (out, item) = Item::Union(item_union).emit_items(Some(&generics));
+        let (out, item) = Item::Impl(item_impl).emit_items(Some(&generics), false);
         quote! { #out #item }
     } else if let Ok(item_fn) = parse2::<ItemFn>(input.clone()) {
         let generics = item_fn.sig.generics.clone();
-        let (out, item) = Item::Fn(item_fn).emit_items(Some(&generics));
+        let (out, item) = Item::Fn(item_fn).emit_items(Some(&generics), false);
+        quote! { #out #item }
+    } else if let Ok(item_mod) = parse2::<ItemMod>(input.clone()) {
+        let (out, item) = Item::Mod(item_mod).emit_items(None, true);
         quote! { #out #item }
     } else if let Ok(item) = parse2::<Item>(input.clone()) {
-        let (out, item) = item.emit_items(None);
+        let (out, item) = item.emit_items(None, false);
         quote! { #out #item }
     } else if let Ok(stmt) = parse2::<Stmt>(input.clone()) {
-        let (out, stmt) = stmt.emit_items(None);
+        let (out, stmt) = stmt.emit_items(None, false);
         quote! { #out #stmt }
     } else {
         abort!(input.span(), "This elementn is not supported")
