@@ -1,5 +1,5 @@
 [package]
-name = "sumtype"
+name = "sumtype-macro"
 description = "Generate zerocost sumtype of iterators or closures"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 version = "0.1.5"
@@ -10,16 +10,17 @@ categories = ["data-structures", "no-std::no-alloc", "rust-patterns"]
 license = "MIT"
 
 [lib]
+proc-macro = true
 path = "lib.rs"
 
 [dependencies]
-sumtype-macro = { path = "macro", version = "0.1.1" }
+proc-macro2 = "1.0"
+template-quote = "0.4"
+proc-macro-error = "1.0"
+derive-syn-parse = "0.1.5"
+darling = "0.20.10"
+syn_derive = "0.1.8"
 
-[workspace]
-
-members = [
-	".",
-	"macro",
-]
-
-resolver = "2"
+[dependencies.syn]
+version = "2.0"
+features = [ "full", "derive", "printing", "extra-traits", "visit", "visit-mut"]

@@ -1,5 +1,5 @@
-#![doc = include_str!("README.md")]
-
+use darling::ast::NestedMeta;
+use darling::FromMeta;
 use derive_syn_parse::Parse;
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::Span;
@@ -188,6 +188,7 @@ struct Arguments {}
 
 enum SumTypeImpl {
     Iterator,
+    Trait(Path),
 }
 
 impl SumTypeImpl {
@@ -200,22 +201,39 @@ impl SumTypeImpl {
         ty_generics: Vec<GenericArgument>,
         where_clause: Vec<WherePredicate>,
     ) -> TokenStream {
-        quote! {
-            impl <#(#impl_generics,)* __SumType_Item #(,#ty_params)*> ::core::iter::Iterator for #enum_path<#(#ty_generics,)*#(#ty_params),*>
-            where
-                #(#where_clause,)*
-                #(for (_, ty) in variants) {
-                    #ty: ::core::iter::Iterator<Item = __SumType_Item>,
-                }
-            {
-                type Item = __SumType_Item;
-                fn next(&mut self) -> Option<Self::Item> {
-                    match self {
-                        #(for (ident, _) in variants) {
-                            Self::#ident(__sumtype_val) => __sumtype_val.next(),
+        match self {
+            SumTypeImpl::Iterator => {
+                quote! {
+                    impl <#(#impl_generics,)* __SumType_Item #(,#ty_params)*> ::core::iter::Iterator for #enum_path<#(#ty_generics,)*#(#ty_params),*>
+                    where
+                        #(#where_clause,)*
+                        #(for (_, ty) in variants) {
+                            #ty: ::core::iter::Iterator<Item = __SumType_Item>,
                         }
-                        Self::__Uninhabited(_) => ::core::unreachable!(),
+                    {
+                        type Item = __SumType_Item;
+                        fn next(&mut self) -> Option<Self::Item> {
+                            match self {
+                                #(for (ident, _) in variants) {
+                                    Self::#ident(__sumtype_val) => __sumtype_val.next(),
+                                }
+                                Self::__Uninhabited(_) => ::core::unreachable!(),
+                            }
+                        }
                     }
+                }
+            }
+            SumTypeImpl::Trait(trait_path) => {
+                quote! {
+                    #trait_path!(
+                        trait_path = #trait_path,
+                        enum_path = #enum_path,
+                        iter_ty_params = [#(#ty_params),*],
+                        variants = [#(for (id, ty) in variants),{(#id,#ty)}],
+                        enum_impl_generics = [#(for p in &impl_generics),{#p}],
+                        enum_ty_generics = [#(#ty_generics),*],
+                        enum_where_clause = { #(#where_clause)* },
+                    )
                 }
             }
         }
@@ -767,6 +785,397 @@ fn inner(_args: Arguments, input: TokenStream) -> TokenStream {
     } else {
         abort!(input.span(), "This element is not supported")
     }
+}
+
+fn is_supported_supertrait(tpb: &TypeParamBound) -> Option<Ident> {
+    match tpb {
+        TypeParamBound::Trait(tb) => {
+            if tb.path.is_ident("Clone")
+                || tb.path.is_ident("Copy")
+                || tb.path.is_ident("PartialEq")
+                || tb.path.is_ident("Eq")
+                || tb.path.is_ident("Hash")
+                || tb.path.get_ident().and_then(|id| {
+                    if id.to_string().starts_with("__SumTrait_Sealed") {
+                        Some(())
+                    } else {
+                        None
+                    }
+                }) == Some(())
+            {
+                tb.path.get_ident().cloned()
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn check_self_ty(ty: &Type) -> bool {
+    use syn::visit::Visit;
+    struct Visitor(bool);
+    impl<'a> syn::visit::Visit<'a> for Visitor {
+        fn visit_type(&mut self, i: &Type) {
+            match i {
+                Type::Path(tp) => {
+                    if tp.path.is_ident("Self") {
+                        abort!(tp.span(), "Self is not allowed here");
+                    }
+                }
+                _ => (),
+            }
+            syn::visit::visit_type(self, i)
+        }
+    }
+    let mut visitor = Visitor(false);
+    visitor.visit_type(ty);
+    visitor.0
+}
+
+fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
+    fn can_make_typeref_type(ty: &Type, generics: &Generics) -> bool {
+        use syn::visit::Visit;
+        struct Visitor(bool, Vec<Ident>, Vec<Ident>);
+        let generics_param_tys = generics
+            .params
+            .iter()
+            .filter_map(|p| {
+                if let GenericParam::Type(TypeParam { ident, .. }) = p {
+                    Some(ident.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let generics_param_vals = generics
+            .params
+            .iter()
+            .filter_map(|p| {
+                if let GenericParam::Const(ConstParam { ident, .. }) = p {
+                    Some(ident.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        impl<'a> syn::visit::Visit<'a> for Visitor {
+            fn visit_type(&mut self, i: &Type) {
+                match i {
+                    Type::ImplTrait(_) | Type::Verbatim(_) | Type::Infer(_) | Type::Macro(_) => {
+                        self.0 = false;
+                    }
+                    Type::Reference(TypeReference { lifetime, .. }) => {
+                        if let Some(lifetime) = lifetime {
+                            if &lifetime.ident != "static" {
+                                self.0 = false;
+                            }
+                        } else {
+                            self.0 = false;
+                        }
+                    }
+                    Type::Path(tp) => {
+                        if tp.qself.is_none() && self.2.iter().any(|ident| tp.path.is_ident(ident))
+                            || (tp.path.segments.len() >= 1 && &tp.path.segments[0].ident == "Self")
+                        {
+                            self.0 = false;
+                        }
+                    }
+                    _ => (),
+                }
+                syn::visit::visit_type(self, i)
+            }
+            fn visit_expr(&mut self, i: &Expr) {
+                if let Expr::Path(ExprPath { qself, path, .. }) = i {
+                    if qself.is_none() && self.1.iter().any(|ident| path.is_ident(ident)) {
+                        self.0 = false;
+                    }
+                }
+            }
+        }
+        let mut visitor = Visitor(true, generics_param_tys, generics_param_vals);
+        visitor.visit_type(ty);
+        visitor.0
+    }
+    use syn::visit::Visit;
+    struct Visitor(Vec<Type>, Generics);
+    impl<'a> syn::visit::Visit<'a> for Visitor {
+        fn visit_type(&mut self, i: &Type) {
+            if can_make_typeref_type(i, &self.1) {
+                self.0.push(i.clone());
+            } else {
+                syn::visit::visit_type(self, i)
+            }
+        }
+    }
+    let mut visitor = Visitor(Vec::new(), input.generics.clone());
+    visitor.visit_item_trait(input);
+    visitor.0
+}
+
+fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStream {
+    let supertraits = input
+        .supertraits
+        .iter()
+        .map(|tpb| {
+            if let Some(id) = is_supported_supertrait(tpb) {
+                id.clone()
+            } else {
+                abort!(tpb.span(), "Not supported")
+            }
+        })
+        .collect::<Vec<_>>();
+    for item in &input.items {
+        match item {
+            TraitItem::Const(_) => abort!(item.span(), "associated const is not supported"),
+            TraitItem::Fn(tfn) => {
+                if tfn.sig.inputs.len() == 0 || !matches!(&tfn.sig.inputs[0], FnArg::Receiver(_)) {
+                    abort!(tfn.sig.span(), "requires receiver")
+                }
+            }
+            TraitItem::Type(tty) => {
+                if tty.default.is_some() {
+                    abort!(tty.span(), "associated type defaults is not supported")
+                }
+                if tty.generics.params.len() > 0 || tty.generics.where_clause.is_some() {
+                    abort!(
+                        tty.generics.span(),
+                        "generalized associated types is not supported"
+                    )
+                }
+            }
+            o => abort!(o.span(), "Not supported"),
+        }
+    }
+    let temporary_mac_name =
+        Ident::new(&format!("__sumtype_macro_{}", random()), Span::call_site());
+    let typeref_types = collect_typeref_types(&input);
+    let (_, _, where_clause) = input.generics.split_for_impl();
+    let typeref_id = random() as usize;
+    quote! {
+        #input
+        #(for (i, ty) in typeref_types.iter().enumerate()) {
+            impl<#(for p in &input.generics.params){#p,} __Sumtype_TypeParam> #krate::TypeRef<#typeref_id, #i> for __Sumtype_TypeParam #where_clause {
+                type Type = #ty;
+            }
+        }
+        #[macro_export]
+        macro_rules! #temporary_mac_name {
+            ($($t:tt)*) => {
+                #krate::_sumtrait_internal!(
+                    $($t:tt)*
+                    typerefs = [#(#typeref_types),*],
+                    item_trait = {#input},
+                    typeref_id = #typeref_id,
+                    krate = #krate,
+                    implementation = #{args.map(|m| quote!(#m)).unwrap_or(quote!(_))},
+                );
+            }
+        }
+        #{&input.vis} use #temporary_mac_name as #{&input.ident};
+    }
+}
+
+#[derive(syn_derive::Parse)]
+struct IdentAndType(Ident, Type);
+
+#[derive(syn_derive::Parse)]
+struct SumtraitInternalContent {
+    trait_path: Path,
+    enum_path: Path,
+    #[parse(Punctuated::parse_terminated)]
+    iter_ty_params: Punctuated<Ident, Token![,]>,
+    #[parse(Punctuated::parse_terminated)]
+    variants: Punctuated<IdentAndType, Token![,]>,
+    #[parse(Punctuated::parse_terminated)]
+    enum_impl_generics: Punctuated<GenericParam, Token![,]>,
+    #[parse(Punctuated::parse_terminated)]
+    enum_ty_generics: Punctuated<GenericArgument, Token![,]>,
+    #[syn(braced)]
+    _brace_token1: syn::token::Brace,
+    #[syn(in = _brace_token1)]
+    enum_where_clause: TokenStream,
+    #[parse(Punctuated::parse_terminated)]
+    typerefs: Punctuated<Type, Token![,]>,
+    #[syn(braced)]
+    _brace_token: syn::token::Brace,
+    #[syn(in = _brace_token)]
+    item_trait: ItemTrait,
+    typeref_id: LitInt,
+    krate: Path,
+    implementation: Type,
+}
+
+#[doc(hidden)]
+#[proc_macro_error]
+#[proc_macro]
+pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
+    let SumtraitInternalContent {
+        trait_path,
+        enum_path,
+        iter_ty_params,
+        variants,
+        enum_impl_generics,
+        enum_ty_generics,
+        enum_where_clause,
+        typerefs,
+        item_trait,
+        typeref_id,
+        krate,
+        implementation,
+        ..
+    } = parse(input).unwrap_or_else(|_| abort!(Span::call_site(), "Bad content"));
+    let implementation = if let Type::Path(TypePath { path, .. }) = implementation {
+        path
+    } else {
+        trait_path
+    };
+    let mut generic_params = item_trait
+        .generics
+        .params
+        .iter()
+        .chain(&enum_impl_generics)
+        .collect::<Vec<_>>();
+    generic_params.sort_by(|lhs, rhs| {
+        use std::cmp::Ordering;
+        if lhs == rhs {
+            Ordering::Equal
+        } else {
+            match (lhs, rhs) {
+                (GenericParam::Lifetime(_), _)
+                | (GenericParam::Const(_), GenericParam::Type(_)) => Ordering::Less,
+                _ => Ordering::Greater,
+            }
+        }
+    });
+    let assoc_types = item_trait
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            TraitItem::Type(c) => Some((
+                Ident::new(
+                    &format!("__SumType_AssocType_{}", &c.ident),
+                    Span::call_site(),
+                ),
+                c.clone(),
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let (_, iter_ty_generics, _) = split_for_impl(Some(&item_trait.generics));
+    let typerefs: HashMap<Type, usize> = typerefs
+        .into_iter()
+        .enumerate()
+        .map(|(l, r)| (r, l))
+        .collect();
+    let iter_fn = item_trait.items.iter().filter_map(|item| {
+            if let TraitItem::Fn(f) = item { Some(f) } else { None }}
+    ).map(|f| {
+        if f.sig.inputs.len() == 0 {
+            abort!(f.span(), "Require receiver");
+        }
+        let the_receiver = if let FnArg::Receiver(Receiver {self_token,..}) = &f.sig.inputs[0] {
+            self_token.clone()
+        } else {
+            abort!(f.span(), "Require receiver");
+        };
+        let mut arg_idents = Vec::new();
+        for arg in f.sig.inputs.iter().skip(1) {
+            if let FnArg::Typed(pat_type) = arg {
+                check_self_ty(pat_type.ty.as_ref());
+                if let Pat::Ident(pi) = pat_type.pat.as_ref() {
+                    arg_idents.push(pi);
+                } else {
+                    abort!(pat_type.pat.span(), "Pattern is not allowed");
+                }
+            } else {
+                abort!(arg.span(), "Bad receiver");
+            }
+        }
+        if let ReturnType::Type(_, ty) = &f.sig.output {
+            check_self_ty(ty.as_ref());
+        }
+        let (fn_impl_generics, _, fn_where_clause) = f.sig.generics.split_for_impl();
+        quote! {
+            #{&f.sig.constness} &{&f.sig.asyncness} &{&f.sig.unsafety} &{f.sig.abi}
+            #{&f.sig.abi} #{&f.sig.ident} #fn_impl_generics (
+                #(for input in &f.sig.inputs), {
+                    #(if let FnArg::Typed(pat_type) = input) {
+                        #(if let Some(index) = typerefs.get(&pat_type.ty)) {
+                            #{&pat_type.pat} #{&pat_type.colon_token} <Self as #krate::TypeRef<#typeref_id, #index>>::Type
+                        } #(else) {
+                            #pat_type
+                        }
+                    } #(else) {
+                        #input
+                    }
+                }
+                #{&f.sig.variadic}
+            )
+            #(if let ReturnType::Type(arr, ty) = &f.sig.output) {
+                #arr
+                #(if let Some(index) = typerefs.get(&ty)) {
+                    <Self as #krate::TypeRef<#typeref_id, #index>>::Type
+                } #(else) {
+                    #ty
+                }
+            } #(else) {} #fn_where_clause {
+                match #the_receiver {
+                    #(for IdentAndType(variant, ty) in &variants) {
+                        #enum_path::#variant(__sumtype_inner_val) =>
+                            <#ty as #implementation<
+                                #(#iter_ty_generics),*
+                            >>::#(&f.sig.ident)(
+                                #the_receiver
+                                #(,#arg_idents)*
+                            ),
+                    }
+                    Self::__Uninhabited(_) => ::core::unreachable!(),
+                }
+            }
+        }
+    });
+    quote! {
+        impl <#(#generic_params,)* #(for (c, _) in &assoc_types),{#c} #(#iter_ty_params),*>
+            #implementation<#(for p in &item_trait.generics.params),{#p}> for #enum_path<#(#enum_ty_generics,)*#(#iter_ty_params),*>
+        where
+            #(#enum_where_clause,)*
+            #(for IdentAndType(_, ty) in &variants) {
+                #ty: #implementation<
+                    #(#iter_ty_generics,)*
+                    #(for (atp, at) in &assoc_types), {
+                        #{&at.ident} = #atp
+                    }
+                >,
+            }
+        {
+            #(for (atp, at) in &assoc_types) {
+                #(let (at_impl_trait, _, at_where) = at.generics.split_for_impl()) {
+                    type #{&at.ident} #at_impl_trait = #atp #at_where;
+                }
+            }
+            #(#iter_fn)*
+        }
+    }
+    .into()
+}
+
+#[proc_macro_error]
+#[proc_macro_attribute]
+pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
+    #[derive(FromMeta)]
+    struct SumtraitArgs {
+        implement: Option<Path>,
+        krate: Option<Path>,
+    }
+    let args = SumtraitArgs::from_list(&NestedMeta::parse_meta_list(attr.into()).unwrap()).unwrap();
+    let krate = args.krate.unwrap_or(parse_quote!(::sumtype));
+    sumtrait_impl(
+        args.implement,
+        &krate,
+        parse(input).unwrap_or_else(|_| abort!(Span::call_site(), "Requires trait definition")),
+    )
+    .into()
 }
 
 /// Enabling `sumtype!(..)` macro in the context.
