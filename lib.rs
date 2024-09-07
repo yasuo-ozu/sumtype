@@ -5,6 +5,7 @@ use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use proc_macro_error::{abort, proc_macro_error};
+use std::collections::{HashMap, HashSet};
 use syn::spanned::Spanned;
 use syn::*;
 use template_quote::{quote, ToTokens};
@@ -102,7 +103,15 @@ trait ProcessTree: Sized {
         typeref_path: &Path,
         generics: Option<&Generics>,
         is_module: bool,
-    ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>);
+    ) -> (
+        Vec<(
+            Span,
+            Ident,
+            Option<Ident>,
+            HashMap<Ident, HashSet<Lifetime>>,
+        )>,
+        Vec<Span>,
+    );
 
     fn emit_items(
         mut self,
@@ -122,12 +131,12 @@ trait ProcessTree: Sized {
         );
         let reftypes = found_exprs
             .iter()
-            .filter_map(|(_, _, reft)| reft.clone())
+            .filter_map(|(_, _, reft, _)| reft.clone())
             .collect::<Vec<_>>();
-        let (impl_generics, ty_generics, where_clause) = split_for_impl(generics);
-        let (ty_params, variants) = found_exprs.iter().enumerate().fold(
-            (vec![], vec![]),
-            |(mut ty_params, mut variants), (i, (_, ident, reft))| {
+        let (mut impl_generics, ty_generics, where_clause) = split_for_impl(generics);
+        let (ty_params, variants, analyzed) = found_exprs.iter().enumerate().fold(
+            (vec![], vec![], HashMap::new()),
+            |(mut ty_params, mut variants, mut analyzed), (i, (_, ident, reft, ana))| {
                 if let Some(reft) = reft {
                     variants.push((
                         ident.clone(),
@@ -139,13 +148,28 @@ trait ProcessTree: Sized {
                     variants.push((ident.clone(), parse_quote!(#tp_ident)));
                     ty_params.push(tp_ident);
                 }
-                (ty_params, variants)
+                for (id, lts) in ana {
+                    analyzed
+                        .entry(id.clone())
+                        .or_insert(HashSet::new())
+                        .extend(lts)
+                }
+                (ty_params, variants, analyzed)
             },
         );
-        if let (Some((span, _, _)), true) = (
+        for g in impl_generics.iter_mut() {
+            if let GenericParam::Type(TypeParam { ident, bounds, .. }) = g {
+                if let Some(lts) = analyzed.get(ident) {
+                    for lt in lts {
+                        bounds.push(TypeParamBound::Lifetime((*lt).clone()));
+                    }
+                }
+            }
+        }
+        if let (Some((span, _, _, _)), true) = (
             found_exprs
                 .iter()
-                .filter(|(_, _, reft)| reft.is_none())
+                .filter(|(_, _, reft, _)| reft.is_none())
                 .next(),
             type_emitted.len() > 0,
         ) {
@@ -209,7 +233,12 @@ const _: () = {
     struct Visitor<'a> {
         enum_path: &'a Path,
         typeref_path: &'a Path,
-        found_exprs: Vec<(Span, Ident, Option<Ident>)>,
+        found_exprs: Vec<(
+            Span,
+            Ident,
+            Option<Ident>,
+            HashMap<Ident, HashSet<Lifetime>>,
+        )>,
         emit_type: Vec<Span>,
         generics: Option<&'a Generics>,
         is_module: bool,
@@ -222,7 +251,15 @@ const _: () = {
             typeref_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
-        ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>) {
+        ) -> (
+            Vec<(
+                Span,
+                Ident,
+                Option<Ident>,
+                HashMap<Ident, HashSet<Lifetime>>,
+            )>,
+            Vec<Span>,
+        ) {
             let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_block_mut(self);
             (visitor.found_exprs, visitor.emit_type)
@@ -236,7 +273,15 @@ const _: () = {
             typeref_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
-        ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>) {
+        ) -> (
+            Vec<(
+                Span,
+                Ident,
+                Option<Ident>,
+                HashMap<Ident, HashSet<Lifetime>>,
+            )>,
+            Vec<Span>,
+        ) {
             let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_item_mut(self);
             (visitor.found_exprs, visitor.emit_type)
@@ -250,7 +295,15 @@ const _: () = {
             typeref_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
-        ) -> (Vec<(Span, Ident, Option<Ident>)>, Vec<Span>) {
+        ) -> (
+            Vec<(
+                Span,
+                Ident,
+                Option<Ident>,
+                HashMap<Ident, HashSet<Lifetime>>,
+            )>,
+            Vec<Span>,
+        ) {
             let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_stmt_mut(self);
             (visitor.found_exprs, visitor.emit_type)
@@ -284,6 +337,75 @@ const _: () = {
             quote! { #{&self.enum_path} #ty_generics }
         }
 
+        fn analyze_lifetime_bounds(
+            &self,
+            generics: &Generics,
+            ty: &Type,
+        ) -> HashMap<Ident, HashSet<Lifetime>> {
+            struct LifetimeVisitor {
+                generic_lifetimes: HashSet<Lifetime>,
+                generic_params: HashSet<Ident>,
+                lifetime_stack: Vec<Lifetime>,
+                result: HashMap<Ident, HashSet<Lifetime>>,
+            }
+            use syn::visit::Visit;
+            impl<'ast> syn::visit::Visit<'ast> for LifetimeVisitor {
+                fn visit_type_reference(&mut self, i: &TypeReference) {
+                    if let Some(lt) = &i.lifetime {
+                        if self.generic_lifetimes.contains(lt) {
+                            self.lifetime_stack.push(lt.clone());
+                            syn::visit::visit_type_reference(self, i);
+                            self.lifetime_stack.pop();
+                            return;
+                        }
+                    }
+                    syn::visit::visit_type_reference(self, i);
+                }
+                fn visit_type_path(&mut self, i: &TypePath) {
+                    if i.qself.is_none() {
+                        if let Some(id) = i.path.get_ident() {
+                            if self.generic_params.contains(id) {
+                                self.result
+                                    .entry(id.clone())
+                                    .or_insert(HashSet::new())
+                                    .extend(self.lifetime_stack.clone());
+                            }
+                            return;
+                        }
+                    }
+                    syn::visit::visit_type_path(self, i);
+                }
+            }
+            let mut visitor = LifetimeVisitor {
+                generic_lifetimes: generics
+                    .params
+                    .iter()
+                    .filter_map(|p| {
+                        if let GenericParam::Lifetime(LifetimeParam { lifetime, .. }) = p {
+                            Some(lifetime.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                generic_params: generics
+                    .params
+                    .iter()
+                    .filter_map(|p| {
+                        if let GenericParam::Type(TypeParam { ident, .. }) = p {
+                            Some(ident.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+                lifetime_stack: Vec::new(),
+                result: HashMap::new(),
+            };
+            visitor.visit_type(ty);
+            visitor.result
+        }
+
         fn do_expr_macro(&mut self, mac: &Macro) -> TokenStream {
             #[derive(Parse)]
             struct Arg {
@@ -304,12 +426,28 @@ const _: () = {
             let reftype_path = path_of_ident(reftype_ident.clone(), self.is_module);
             let id_fn_ident =
                 Ident::new(&format!("__sum_type_id_fn_{}", random()), Span::call_site());
-            let (impl_generics, ty_generics, where_clause) = split_for_impl(self.generics);
+            let (mut impl_generics, ty_generics, where_clause) = split_for_impl(self.generics);
+            let analyzed =
+                if let (Some(generics), Some(ty)) = (self.generics.as_ref(), arg.ty.as_ref()) {
+                    self.analyze_lifetime_bounds(*generics, ty)
+                } else {
+                    HashMap::new()
+                };
             self.found_exprs.push((
                 mac.span(),
                 variant_ident.clone(),
                 arg.ty.as_ref().map(|_| reftype_ident.clone()),
+                analyzed.clone(),
             ));
+            for g in impl_generics.iter_mut() {
+                if let GenericParam::Type(TypeParam { ident, bounds, .. }) = g {
+                    if let Some(lts) = analyzed.get(ident) {
+                        for lt in lts {
+                            bounds.push(TypeParamBound::Lifetime(lt.clone().clone()));
+                        }
+                    }
+                }
+            }
             quote! {
                 {
                     #(if let Some(ty) = &arg.ty){
