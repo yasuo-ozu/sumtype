@@ -224,17 +224,18 @@ impl SumTypeImpl {
                 }
             }
             SumTypeImpl::Trait(trait_path) => {
-                quote! {
+                let ret = quote! {
                     #trait_path!(
-                        trait_path = #trait_path,
-                        enum_path = #enum_path,
-                        iter_ty_params = [#(#ty_params),*],
-                        variants = [#(for (id, ty) in variants),{(#id,#ty)}],
-                        enum_impl_generics = [#(for p in &impl_generics),{#p}],
-                        enum_ty_generics = [#(#ty_generics),*],
-                        enum_where_clause = { #(#where_clause)* },
-                    )
-                }
+                        /* trait_path = */ #trait_path,
+                        /* enum_path = */ #enum_path,
+                        /* iter_ty_params = */ [#(#ty_params),*],
+                        /* variants = */ [#(for (id, ty) in variants),{#id:#ty}],
+                        /* enum_impl_generics = */ [ #(#impl_generics),* ],
+                        /* enum_ty_generics = */ [#(#ty_generics),*],
+                        /* enum_where_clause = */ { #(#where_clause)* },
+                    );
+                };
+                ret
             }
         }
     }
@@ -441,7 +442,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                 {
                     type Type = __SumType_Item;
                 }
-                #{ SumTypeImpl::Iterator.gen(
+                #{ SumTypeImpl::Trait(parse_quote!(::sumtype::traits::Iterator)).gen(
                     &path_of_ident(enum_ident, false),
                     ty_params.as_slice(),
                     variants.as_slice(),
@@ -962,13 +963,13 @@ fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStr
         #[macro_export]
         macro_rules! #temporary_mac_name {
             ($($t:tt)*) => {
-                #krate::_sumtrait_internal!(
-                    $($t:tt)*
-                    typerefs = [#(#typeref_types),*],
-                    item_trait = {#input},
-                    typeref_id = #typeref_id,
-                    krate = #krate,
-                    implementation = #{args.map(|m| quote!(#m)).unwrap_or(quote!(_))},
+                ::sumtype::_sumtrait_internal!(
+                    $($t)*
+                    /* typerefs= */  [#(#typeref_types),*],
+                    /* item_trait= */  {#input},
+                    /* typeref_id= */  #typeref_id,
+                    /* krate= */  #krate,
+                    /* implementation= */  #{args.map(|m| quote!(#m)).unwrap_or(quote!(_))},
                 );
             }
         }
@@ -977,33 +978,64 @@ fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStr
 }
 
 #[derive(syn_derive::Parse)]
-struct IdentAndType(Ident, Type);
+struct IdentAndType {
+    ident: Ident,
+    _colon_token: Token![:],
+    ty: Type,
+}
 
 #[derive(syn_derive::Parse)]
 struct SumtraitInternalContent {
     trait_path: Path,
+    _comma_0: Token![,],
     enum_path: Path,
+    _comma_1: Token![,],
+    #[syn(bracketed)]
+    _bracket_token0: syn::token::Bracket,
+    #[syn(in = _bracket_token0)]
     #[parse(Punctuated::parse_terminated)]
     iter_ty_params: Punctuated<Ident, Token![,]>,
+    _comma_2: Token![,],
+    #[syn(bracketed)]
+    _bracket_token1: syn::token::Bracket,
+    #[syn(in = _bracket_token1)]
     #[parse(Punctuated::parse_terminated)]
     variants: Punctuated<IdentAndType, Token![,]>,
+    _comma_3: Token![,],
+    #[syn(bracketed)]
+    _bracket_token2: syn::token::Bracket,
+    #[syn(in = _bracket_token2)]
     #[parse(Punctuated::parse_terminated)]
     enum_impl_generics: Punctuated<GenericParam, Token![,]>,
+    _comma_4: Token![,],
+    #[syn(bracketed)]
+    _bracket_token3: syn::token::Bracket,
+    #[syn(in = _bracket_token3)]
     #[parse(Punctuated::parse_terminated)]
     enum_ty_generics: Punctuated<GenericArgument, Token![,]>,
+    _comma_5: Token![,],
     #[syn(braced)]
     _brace_token1: syn::token::Brace,
     #[syn(in = _brace_token1)]
     enum_where_clause: TokenStream,
+    _comma_6: Token![,],
+    #[syn(bracketed)]
+    _bracket_token4: syn::token::Bracket,
+    #[syn(in = _bracket_token4)]
     #[parse(Punctuated::parse_terminated)]
     typerefs: Punctuated<Type, Token![,]>,
+    _comma_7: Token![,],
     #[syn(braced)]
     _brace_token: syn::token::Brace,
     #[syn(in = _brace_token)]
     item_trait: ItemTrait,
+    _comma_8: Token![,],
     typeref_id: LitInt,
+    _comma_9: Token![,],
     krate: Path,
+    _comma_10: Token![,],
     implementation: Type,
+    _comma_11: Token![,],
 }
 
 #[doc(hidden)]
@@ -1024,7 +1056,7 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
         krate,
         implementation,
         ..
-    } = parse(input).unwrap_or_else(|_| abort!(Span::call_site(), "Bad content"));
+    } = parse(input).unwrap_or_else(|e| abort!(Span::call_site(), format!("Bad content: {}", e)));
     let implementation = if let Type::Path(TypePath { path, .. }) = implementation {
         path
     } else {
@@ -1097,8 +1129,8 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
         }
         let (fn_impl_generics, _, fn_where_clause) = f.sig.generics.split_for_impl();
         quote! {
-            #{&f.sig.constness} &{&f.sig.asyncness} &{&f.sig.unsafety} &{f.sig.abi}
-            #{&f.sig.abi} #{&f.sig.ident} #fn_impl_generics (
+            #{&f.sig.constness} #{&f.sig.asyncness} #{&f.sig.unsafety}
+            #{&f.sig.abi} fn #{&f.sig.ident} #fn_impl_generics (
                 #(for input in &f.sig.inputs), {
                     #(if let FnArg::Typed(pat_type) = input) {
                         #(if let Some(index) = typerefs.get(&pat_type.ty)) {
@@ -1121,12 +1153,12 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
                 }
             } #(else) {} #fn_where_clause {
                 match #the_receiver {
-                    #(for IdentAndType(variant, ty) in &variants) {
-                        #enum_path::#variant(__sumtype_inner_val) =>
+                    #(for IdentAndType{ident, ty, ..} in &variants) {
+                        #enum_path::#ident(__sumtype_inner_val) =>
                             <#ty as #implementation<
                                 #(#iter_ty_generics),*
-                            >>::#(&f.sig.ident)(
-                                #the_receiver
+                            >>::#{&f.sig.ident}(
+                                __sumtype_inner_val
                                 #(,#arg_idents)*
                             ),
                     }
@@ -1135,12 +1167,35 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
             }
         }
     });
+    let iter_ty_params = iter_ty_params
+        .iter()
+        .map(|ident| quote!(#ident))
+        .collect::<Vec<_>>();
+    let enum_ty_generics = enum_ty_generics
+        .into_iter()
+        .map(|ga| quote!(#ga))
+        .collect::<Vec<_>>();
+    let enum_where_clause = enum_where_clause
+        .into_iter()
+        .map(|wc| quote!(#wc))
+        .collect::<Vec<_>>();
     quote! {
-        impl <#(#generic_params,)* #(for (c, _) in &assoc_types),{#c} #(#iter_ty_params),*>
-            #implementation<#(for p in &item_trait.generics.params),{#p}> for #enum_path<#(#enum_ty_generics,)*#(#iter_ty_params),*>
+        impl <
+            #(#generic_params),*
+            #(if generic_params.len() > 0 && assoc_types.len() > 0) { , }
+            #(for (c, _) in &assoc_types),{#c}
+            #(if assoc_types.len() > 0 && iter_ty_params.len() > 0) { , }
+            #(#iter_ty_params),*
+        >
+            #implementation<#(for p in &item_trait.generics.params),{#p}> for #enum_path<
+                #(#enum_ty_generics),*
+                #(if enum_ty_generics.len() > 0 && iter_ty_params.len() > 0) { , }
+                #(#iter_ty_params),*
+            >
         where
-            #(#enum_where_clause,)*
-            #(for IdentAndType(_, ty) in &variants) {
+            #(#enum_where_clause)*
+            #(if enum_where_clause.len() > 0) {,}
+            #(for IdentAndType{ty, ..} in &variants) {
                 #ty: #implementation<
                     #(#iter_ty_generics,)*
                     #(for (atp, at) in &assoc_types), {
@@ -1163,12 +1218,13 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
 #[proc_macro_error]
 #[proc_macro_attribute]
 pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
-    #[derive(FromMeta)]
+    #[derive(FromMeta, Debug)]
     struct SumtraitArgs {
         implement: Option<Path>,
         krate: Option<Path>,
     }
     let args = SumtraitArgs::from_list(&NestedMeta::parse_meta_list(attr.into()).unwrap()).unwrap();
+
     let krate = args.krate.unwrap_or(parse_quote!(::sumtype));
     sumtrait_impl(
         args.implement,

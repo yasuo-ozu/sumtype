@@ -1,6 +1,47 @@
 #![doc = include_str!("README.md")]
 
-pub use sumtype_macro::{_sumtrait_internal, sumtrait, sumtype};
+pub use sumtype_macro::{_sumtrait_internal, sumtrait};
+
+/// Enabling `sumtype!(..)` macro in the context.
+///
+/// For each context marked by `#[sumtype]`, sumtype makes an union type of several
+/// [`std::iter::Iterator`] types. To intern an expression of `Iterator` into the union type, you
+/// can use `sumtype!([expr])` syntax. This is an example of returning unified `Iterator`:
+///
+/// ```
+/// # use sumtype::sumtype;
+/// # use std::iter::Iterator;
+/// #[sumtype]
+/// fn return_iter(a: bool) -> impl Iterator<Item = ()> {
+///     if a {
+///         sumtype!(std::iter::once(()))
+///     } else {
+///         sumtype!(vec![()].into_iter())
+///     }
+/// }
+/// ```
+///
+/// This function returns [`std::iter::Once`] or [`std::vec::IntoIter`] depends on `a` value. The
+/// `#[sumtype]` system make annonymous union type that is also [`std::iter::Iterator`], and wrap
+/// each `sumtype!(..)` expression with the union type. The mechanism is zerocost when `a` is fixed
+/// in the compile process.
+///
+/// You can place exact (non-annonymous) type using `sumtype!()` macro in type context. In this
+/// way, you should specify type using `sumtype!([expr], [type])` format like:
+///
+/// ```
+/// # use sumtype::sumtype;
+/// # use std::iter::Iterator;
+/// #[sumtype]
+/// fn return_iter_explicit(a: bool) -> sumtype!() {
+///     if a {
+///         sumtype!(std::iter::once(()), std::iter::Once<()>)
+///     } else {
+///         sumtype!(vec![()].into_iter(), std::vec::IntoIter<()>)
+///     }
+/// }
+/// ```
+pub use sumtype_macro::sumtype;
 
 #[doc(hidden)]
 pub trait TypeRef<const RANDOM: usize, const N: usize> {
