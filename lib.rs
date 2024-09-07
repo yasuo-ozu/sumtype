@@ -787,6 +787,29 @@ fn inner(_args: Arguments, input: TokenStream) -> TokenStream {
 ///     }
 /// }
 /// ```
+///
+/// You may need to use additional generic parameters in `[ty]`, the following example will be
+/// useful:
+///
+/// ```
+/// # use sumtype::sumtype;
+/// # use std::iter::Iterator;
+/// struct S;
+///
+/// #[sumtype]
+/// impl S {
+///     fn f<'a, T>(t: &'a T, count: usize) -> sumtype!['a, T] {
+///         if count == 0 {
+///             sumtype!(std::iter::empty(), for<'a, T: 'a> std::iter::Empty<&'a T>)
+///         } else {
+///             sumtype!(
+///                 std::iter::repeat(t).take(count),
+///                 for<'a, T: 'a> std::iter::Take<std::iter::Repeat<&'a T>>
+///             )
+///         }
+///     }
+/// }
+/// ```
 #[proc_macro_error]
 #[proc_macro_attribute]
 pub fn sumtype(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
