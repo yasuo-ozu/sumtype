@@ -222,6 +222,19 @@ impl SumTypeImpl {
     }
 }
 
+struct ExprMacroInfo {
+    span: Span,
+    variant_ident: Ident,
+    reftype_ident: Option<Ident>,
+    analyzed_bounds: HashMap<Ident, HashSet<Lifetime>>,
+    generic_params: Option<Punctuated<GenericParam, Token![,]>>,
+}
+
+struct TypeMacroInfo {
+    span: Span,
+    generic_args: Punctuated<GenericArgument, Token![,]>,
+}
+
 // Factory methods to process on supported tree elements
 trait ProcessTree: Sized {
     // Collect macros in both type context and expr context. Replace macros with code.
@@ -231,16 +244,7 @@ trait ProcessTree: Sized {
         typeref_path: &Path,
         generics: Option<&Generics>,
         is_module: bool,
-    ) -> (
-        Vec<(
-            Span,
-            Ident,
-            Option<Ident>,
-            HashMap<Ident, HashSet<Lifetime>>,
-            Option<Punctuated<GenericParam, Token![,]>>,
-        )>,
-        Vec<(Span, Punctuated<GenericArgument, Token![,]>)>,
-    );
+    ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>);
 
     fn emit_items(
         mut self,
@@ -260,22 +264,20 @@ trait ProcessTree: Sized {
         );
         let reftypes = found_exprs
             .iter()
-            .filter_map(|(_, _, reft, _, _)| reft.clone())
+            .filter_map(|info| info.reftype_ident.clone())
             .collect::<Vec<_>>();
         let (mut impl_generics, _, where_clause) = split_for_impl(generics);
         if found_exprs.len() == 0 {
             abort!(Span::call_site(), "Cannot find any sumtype!() in expr");
         }
-        let analyzed = found_exprs
-            .iter()
-            .fold(HashMap::new(), |mut acc, (_, _, _, ana, _)| {
-                for (id, lts) in ana {
-                    acc.entry(id.clone()).or_insert(HashSet::new()).extend(lts)
-                }
-                acc
-            });
-        let expr_gparams = found_exprs.iter().fold(HashMap::new(), |mut acc, item| {
-            *acc.entry(item.4.clone()).or_insert(0usize) += 1;
+        let analyzed = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
+            for (id, lts) in &info.analyzed_bounds {
+                acc.entry(id.clone()).or_insert(HashSet::new()).extend(lts)
+            }
+            acc
+        });
+        let expr_gparams = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
+            *acc.entry(info.generic_params.clone()).or_insert(0usize) += 1;
             acc
         });
         if expr_gparams.len() != 1 {
@@ -296,17 +298,20 @@ trait ProcessTree: Sized {
             .cloned()
             .map(generic_param_to_arg)
             .collect::<Vec<_>>();
-        for (_, gargs) in &type_emitted {
-            if gargs.len() != expr_garg.len()
-                || !expr_garg.iter().zip(gargs).all(|two| match two {
-                    (GenericArgument::Lifetime(_), GenericArgument::Lifetime(_))
-                    | (GenericArgument::Const(_), GenericArgument::Const(_))
-                    | (GenericArgument::Type(_), GenericArgument::Type(_)) => true,
-                    _ => false,
-                })
+        for info in &type_emitted {
+            if info.generic_args.len() != expr_garg.len()
+                || !expr_garg
+                    .iter()
+                    .zip(&info.generic_args)
+                    .all(|two| match two {
+                        (GenericArgument::Lifetime(_), GenericArgument::Lifetime(_))
+                        | (GenericArgument::Const(_), GenericArgument::Const(_))
+                        | (GenericArgument::Type(_), GenericArgument::Type(_)) => true,
+                        _ => false,
+                    })
             {
                 abort!(
-                    gargs.span(),
+                    info.generic_args.span(),
                     "The generic arguments are incompatible with generic params in expression."
                 )
             }
@@ -328,30 +333,30 @@ trait ProcessTree: Sized {
             .collect::<Vec<_>>();
         let (ty_params, variants) = found_exprs.iter().enumerate().fold(
             (vec![], vec![]),
-            |(mut ty_params, mut variants), (i, (_, ident, reft, _, _))| {
-                if let Some(reft) = reft {
+            |(mut ty_params, mut variants), (i, info)| {
+                if let Some(reft) = &info.reftype_ident {
                     variants.push((
-                        ident.clone(),
+                        info.variant_ident.clone(),
                         parse_quote!(<#reft as #typeref_ident<#(#ty_generics),*>>::Type),
                     ));
                 } else {
                     let tp_ident =
                         Ident::new(&format!("__Sumtype_TypeParam_{}", i), Span::call_site());
-                    variants.push((ident.clone(), parse_quote!(#tp_ident)));
+                    variants.push((info.variant_ident.clone(), parse_quote!(#tp_ident)));
                     ty_params.push(tp_ident);
                 }
                 (ty_params, variants)
             },
         );
-        if let (Some((span, _, _, _, _)), true) = (
+        if let (Some(info), true) = (
             found_exprs
                 .iter()
-                .filter(|(_, _, reft, _, _)| reft.is_none())
+                .filter(|info| info.reftype_ident.is_none())
                 .next(),
             type_emitted.len() > 0,
         ) {
             abort!(
-                span,
+                &info.span,
                 r#"
 To emit full type, you should specify the type.
 Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
@@ -412,14 +417,8 @@ const _: () = {
     struct Visitor<'a> {
         enum_path: &'a Path,
         typeref_path: &'a Path,
-        found_exprs: Vec<(
-            Span,
-            Ident,
-            Option<Ident>,
-            HashMap<Ident, HashSet<Lifetime>>,
-            Option<Punctuated<GenericParam, Token![,]>>,
-        )>,
-        emit_type: Vec<(Span, Punctuated<GenericArgument, Token![,]>)>,
+        found_exprs: Vec<ExprMacroInfo>,
+        emit_type: Vec<TypeMacroInfo>,
         generics: Option<&'a Generics>,
         is_module: bool,
     }
@@ -431,16 +430,7 @@ const _: () = {
             typeref_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
-        ) -> (
-            Vec<(
-                Span,
-                Ident,
-                Option<Ident>,
-                HashMap<Ident, HashSet<Lifetime>>,
-                Option<Punctuated<GenericParam, Token![,]>>,
-            )>,
-            Vec<(Span, Punctuated<GenericArgument, Token![,]>)>,
-        ) {
+        ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>) {
             let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_block_mut(self);
             (visitor.found_exprs, visitor.emit_type)
@@ -454,16 +444,7 @@ const _: () = {
             typeref_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
-        ) -> (
-            Vec<(
-                Span,
-                Ident,
-                Option<Ident>,
-                HashMap<Ident, HashSet<Lifetime>>,
-                Option<Punctuated<GenericParam, Token![,]>>,
-            )>,
-            Vec<(Span, Punctuated<GenericArgument, Token![,]>)>,
-        ) {
+        ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>) {
             let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_item_mut(self);
             (visitor.found_exprs, visitor.emit_type)
@@ -477,16 +458,7 @@ const _: () = {
             typeref_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
-        ) -> (
-            Vec<(
-                Span,
-                Ident,
-                Option<Ident>,
-                HashMap<Ident, HashSet<Lifetime>>,
-                Option<Punctuated<GenericParam, Token![,]>>,
-            )>,
-            Vec<(Span, Punctuated<GenericArgument, Token![,]>)>,
-        ) {
+        ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>) {
             let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
             visitor.visit_stmt_mut(self);
             (visitor.found_exprs, visitor.emit_type)
@@ -526,7 +498,10 @@ const _: () = {
                 arg.generic_args.clone(),
             )
             .collect::<Vec<_>>();
-            self.emit_type.push((mac.span(), arg.generic_args));
+            self.emit_type.push(TypeMacroInfo {
+                span: mac.span(),
+                generic_args: arg.generic_args,
+            });
             quote! {
                 #{&self.enum_path}
                 #(if ty_generics.len() > 0){
@@ -637,13 +612,13 @@ const _: () = {
                 } else {
                     HashMap::new()
                 };
-            self.found_exprs.push((
-                mac.span(),
-                variant_ident.clone(),
-                arg.ty.as_ref().map(|_| reftype_ident.clone()),
-                analyzed.clone(),
-                arg.for_generics.clone(),
-            ));
+            self.found_exprs.push(ExprMacroInfo {
+                span: mac.span(),
+                variant_ident: variant_ident.clone(),
+                reftype_ident: arg.ty.as_ref().map(|_| reftype_ident.clone()),
+                analyzed_bounds: analyzed.clone(),
+                generic_params: arg.for_generics.clone(),
+            });
             for g in impl_generics.iter_mut() {
                 if let GenericParam::Type(TypeParam { ident, bounds, .. }) = g {
                     if let Some(lts) = analyzed.get(ident) {
