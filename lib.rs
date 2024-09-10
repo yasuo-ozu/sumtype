@@ -402,7 +402,6 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                     struct #reft;
                 }
                 trait #typeref_ident <#(#impl_generics),*> { type Type; }
-                #[derive(Clone, Debug)]
                 #vis enum #enum_ident <#(#impl_generics,)*#(#ty_params),*> {
                     #(for (ident, ty) in &variants) {
                         #ident ( #ty ),
