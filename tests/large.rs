@@ -23,3 +23,27 @@ impl MyTrait for () {
         }
     }
 }
+#[allow(unused)]
+trait MyTrait2<T> {
+    type Ty<'a>
+    where
+        T: 'a;
+
+    fn f<'a>(i: usize, _: &'a T) -> Self::Ty<'a>;
+}
+
+#[sumtype]
+impl<T> MyTrait2<T> for () {
+    type Ty<'a> = sumtype!['a] where T: 'a;
+    fn f<'a>(i: usize, t: &'a T) -> Self::Ty<'a> {
+        if i == 0 {
+            sumtype!(std::iter::empty(), for<'a> std::iter::Empty<&'a T> where T: 'a)
+        } else {
+            sumtype!(
+                std::iter::repeat(t).take(i),
+                for<'a> std::iter::Take<std::iter::Repeat<&'a T>>
+                where T: 'a
+            )
+        }
+    }
+}

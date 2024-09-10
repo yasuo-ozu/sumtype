@@ -227,7 +227,7 @@ struct ExprMacroInfo {
     variant_ident: Ident,
     reftype_ident: Option<Ident>,
     analyzed_bounds: HashMap<Ident, HashSet<Lifetime>>,
-    generic_params: Option<Punctuated<GenericParam, Token![,]>>,
+    generics: Generics,
 }
 
 struct TypeMacroInfo {
@@ -266,34 +266,51 @@ trait ProcessTree: Sized {
             .iter()
             .filter_map(|info| info.reftype_ident.clone())
             .collect::<Vec<_>>();
-        let (mut impl_generics, _, where_clause) = split_for_impl(generics);
+        let (impl_generics, _, where_clause) = split_for_impl(generics);
         if found_exprs.len() == 0 {
             abort!(Span::call_site(), "Cannot find any sumtype!() in expr");
         }
-        let analyzed = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
-            for (id, lts) in &info.analyzed_bounds {
-                acc.entry(id.clone()).or_insert(HashSet::new()).extend(lts)
-            }
+        let expr_generics_list = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
+            *acc.entry(info.generics.clone()).or_insert(0usize) += 1;
             acc
         });
-        let expr_gparams = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
-            *acc.entry(info.generic_params.clone()).or_insert(0usize) += 1;
-            acc
-        });
-        if expr_gparams.len() != 1 {
-            let mut expr_gparams = expr_gparams.into_iter().collect::<Vec<_>>();
+        if expr_generics_list.len() != 1 {
+            let mut expr_gparams = expr_generics_list.into_iter().collect::<Vec<_>>();
             expr_gparams.sort_by_key(|item| item.1);
             abort!(expr_gparams[0].0.span(), "Generic argument mismatch");
         }
-        let expr_gparam = expr_gparams
-            .into_iter()
-            .next()
-            .unwrap()
-            .0
-            .into_iter()
-            .flatten()
-            .collect::<Vec<_>>();
-        let expr_garg = expr_gparam
+        let expr_generics = expr_generics_list.into_iter().next().unwrap().0;
+        let mut analyzed = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
+            for (id, lts) in &info.analyzed_bounds {
+                acc.entry(id.clone())
+                    .or_insert(HashSet::new())
+                    .extend(lts.iter().map(|lt| TypeParamBound::Lifetime(lt.clone())));
+            }
+            acc
+        });
+        if let Some(where_clause) = &expr_generics.where_clause {
+            for pred in &where_clause.predicates {
+                match pred {
+                    WherePredicate::Type(PredicateType {
+                        bounded_ty, bounds, ..
+                    }) => {
+                        if let Type::Path(path) = bounded_ty {
+                            if path.qself.is_none() {
+                                if let Some(id) = path.path.get_ident() {
+                                    analyzed
+                                        .entry(id.clone())
+                                        .or_insert(HashSet::new())
+                                        .extend(bounds.clone());
+                                }
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+            }
+        }
+        let expr_garg = expr_generics
+            .params
             .iter()
             .cloned()
             .map(generic_param_to_arg)
@@ -316,20 +333,29 @@ trait ProcessTree: Sized {
                 )
             }
         }
+        let mut impl_generics =
+            merge_generic_params(impl_generics, expr_generics.params).collect::<Vec<_>>();
         for g in impl_generics.iter_mut() {
             if let GenericParam::Type(TypeParam { ident, bounds, .. }) = g {
-                if let Some(lts) = analyzed.get(ident) {
-                    for lt in lts {
-                        bounds.push(TypeParamBound::Lifetime((*lt).clone()));
+                if let Some(bs) = analyzed.get(ident) {
+                    for b in bs {
+                        bounds.push(b.clone());
                     }
                 }
             }
         }
-        let impl_generics = merge_generic_params(impl_generics, expr_gparam).collect::<Vec<_>>();
         let ty_generics = impl_generics
             .iter()
             .cloned()
             .map(generic_param_to_arg)
+            .collect::<Vec<_>>();
+        let where_clause = expr_generics
+            .where_clause
+            .clone()
+            .map(|wc| wc.predicates)
+            .into_iter()
+            .flatten()
+            .chain(where_clause)
             .collect::<Vec<_>>();
         let (ty_params, variants) = found_exprs.iter().enumerate().fold(
             (vec![], vec![]),
@@ -592,6 +618,8 @@ const _: () = {
                 for_generics: Option<Punctuated<GenericParam, Token![,]>>,
                 #[parse_if(_comma_token.is_some())]
                 ty: Option<Type>,
+                #[parse_if(_comma_token.is_some())]
+                where_clause: Option<Option<WhereClause>>,
             }
             let arg: Arg = mac
                 .parse_body()
@@ -612,13 +640,14 @@ const _: () = {
                 } else {
                     HashMap::new()
                 };
-            self.found_exprs.push(ExprMacroInfo {
-                span: mac.span(),
-                variant_ident: variant_ident.clone(),
-                reftype_ident: arg.ty.as_ref().map(|_| reftype_ident.clone()),
-                analyzed_bounds: analyzed.clone(),
-                generic_params: arg.for_generics.clone(),
-            });
+            let generics = Generics {
+                params: arg.for_generics.clone().unwrap_or(Default::default()),
+                where_clause: arg.where_clause.unwrap_or(Some(WhereClause {
+                    predicates: Punctuated::new(),
+                    where_token: Default::default(),
+                })),
+                ..Default::default()
+            };
             for g in impl_generics.iter_mut() {
                 if let GenericParam::Type(TypeParam { ident, bounds, .. }) = g {
                     if let Some(lts) = analyzed.get(ident) {
@@ -629,13 +658,27 @@ const _: () = {
                 }
             }
             let impl_generics =
-                merge_generic_params(impl_generics, arg.for_generics.into_iter().flatten())
-                    .collect::<Vec<_>>();
+                merge_generic_params(impl_generics, generics.params.clone()).collect::<Vec<_>>();
             let ty_generics = impl_generics
                 .iter()
                 .cloned()
                 .map(generic_param_to_arg)
                 .collect::<Vec<_>>();
+            let where_clause = generics
+                .where_clause
+                .clone()
+                .map(|wc| wc.predicates)
+                .into_iter()
+                .flatten()
+                .chain(where_clause)
+                .collect::<Vec<_>>();
+            self.found_exprs.push(ExprMacroInfo {
+                span: mac.span(),
+                variant_ident: variant_ident.clone(),
+                reftype_ident: arg.ty.as_ref().map(|_| reftype_ident.clone()),
+                analyzed_bounds: analyzed.clone(),
+                generics,
+            });
             quote! {
                 {
                     #(if let Some(ty) = &arg.ty){
@@ -647,7 +690,11 @@ const _: () = {
                             type Type = #ty;
                         }
                     }
-                    fn #id_fn_ident<#(#impl_generics,)*__SumType_T: #{&self.typeref_path} <#(#ty_generics),*>>(t: __SumType_T) -> __SumType_T { t }
+                    fn #id_fn_ident<#(#impl_generics,)*__SumType_T: #{&self.typeref_path} <#(#ty_generics),*>>(t: __SumType_T) -> __SumType_T
+                        #(if where_clause.len() > 0) {
+                            where #(#where_clause,)*
+                        }
+                    { t }
                     #id_fn_ident::<#(#ty_generics,)* _>(#{&self.enum_path}::#variant_ident(#{&arg.expr}))
                 }
             }
