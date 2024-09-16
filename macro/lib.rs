@@ -438,11 +438,11 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                 }
                 impl<#(#impl_generics,)* __SumType_Item #(,#ty_params)*> #typeref_ident <#(#ty_generics),*>
                     for #enum_ident <#(#ty_generics,)*#(#ty_params),*>
-                where
+                #(if where_clause.len() > 0){where}
                     #(#where_clause,)*
-                    #(for (_, ty) in &variants) {
-                        #ty: ::core::iter::Iterator<Item = __SumType_Item>,
-                    }
+                    // #(for (_, ty) in &variants) {
+                    //     #ty: ::core::iter::Iterator<Item = __SumType_Item>,
+                    // }
                 {
                     type Type = __SumType_Item;
                 }
