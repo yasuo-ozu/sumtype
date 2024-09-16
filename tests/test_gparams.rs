@@ -1,7 +1,7 @@
 use sumtype::sumtype;
 
 #[allow(unused)]
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 fn with_generics<'a, T>(t: &'a T, count: usize) -> sumtype!() {
     match count {
         0 => sumtype!(std::iter::empty(), std::iter::Empty<&'a T>),

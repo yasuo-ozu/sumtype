@@ -29,7 +29,7 @@ Here's how it might look:
 
 ```
 use sumtype::sumtype;
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 fn conditional_iterator(flag: bool) -> impl Iterator<Item = i32> {
     if flag {
         sumtype!((0..10)) // Wraps the range iterator
@@ -48,7 +48,7 @@ Here's an example to illustrate this:
 ```ignore
 # use sumtype::sumtype;
 # let some_condition = true;
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 let mut iter =  {
     if some_condition {
         sumtype!((0..5)) // Wraps the range iterator
@@ -71,7 +71,7 @@ Using `#[sumtype]` with a trait definition:
 
 ```
 # use sumtype::sumtype;
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 trait MyTrait {
     fn get_iterator(&self, flag: bool) -> impl Iterator<Item = i32> {
         if flag {
@@ -89,7 +89,7 @@ Using `#[sumtype]` with a struct definition:
 
 ```
 # use sumtype::sumtype;
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 trait MyTrait {
     fn get_iterator(&self, flag: bool) -> impl Iterator<Item = i32> {
         if flag {
@@ -101,7 +101,7 @@ trait MyTrait {
 }
 struct StructA;
 
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 impl MyTrait for StructA {
     fn get_iterator(&self, _flag: bool) -> impl Iterator<Item = i32> {
         sumtype!((0..5)) // Wraps a range iterator
@@ -115,7 +115,7 @@ Using `#[sumtype]` with an module definition:
 
 ```ignore
 # use sumtype::sumtype;
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 mod my_module {
     pub struct MyStruct {
         iter: sumtype!(),

@@ -11,7 +11,7 @@ pub use sumtype_macro::{_sumtrait_internal, sumtrait};
 /// ```
 /// # use sumtype::sumtype;
 /// # use std::iter::Iterator;
-/// #[sumtype]
+/// #[sumtype(sumtype::traits::Iterator)]
 /// fn return_iter(a: bool) -> impl Iterator<Item = ()> {
 ///     if a {
 ///         sumtype!(std::iter::once(()))
@@ -32,7 +32,7 @@ pub use sumtype_macro::{_sumtrait_internal, sumtrait};
 /// ```
 /// # use sumtype::sumtype;
 /// # use std::iter::Iterator;
-/// #[sumtype]
+/// #[sumtype(sumtype::traits::Iterator)]
 /// fn return_iter_explicit(a: bool) -> sumtype!() {
 ///     if a {
 ///         sumtype!(std::iter::once(()), std::iter::Once<()>)

@@ -9,7 +9,7 @@ trait MyTrait {
     fn f<'a, T>(i: usize, _: &'a T) -> Self::Ty<'a, T>;
 }
 
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 impl MyTrait for () {
     type Ty<'a, T> = sumtype!['a, T] where T: 'a;
     fn f<'a, T>(i: usize, t: &'a T) -> Self::Ty<'a, T> {
@@ -32,7 +32,7 @@ trait MyTrait2<T> {
     fn f<'a>(i: usize, _: &'a T) -> Self::Ty<'a>;
 }
 
-#[sumtype]
+#[sumtype(sumtype::traits::Iterator)]
 impl<T> MyTrait2<T> for () {
     type Ty<'a> = sumtype!['a] where T: 'a;
     fn f<'a>(i: usize, t: &'a T) -> Self::Ty<'a> {

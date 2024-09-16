@@ -184,7 +184,10 @@ fn split_for_impl(
 }
 
 #[derive(Parse)]
-struct Arguments {}
+struct Arguments {
+    #[call(Punctuated::parse_terminated)]
+    bounds: Punctuated<Path, Token![+]>,
+}
 
 enum SumTypeImpl {
     Iterator,
@@ -267,6 +270,7 @@ trait ProcessTree: Sized {
 
     fn emit_items(
         mut self,
+        args: &Arguments,
         generics: Option<&Generics>,
         is_module: bool,
         vis: Visibility,
@@ -442,14 +446,16 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                 {
                     type Type = __SumType_Item;
                 }
-                #{ SumTypeImpl::Trait(parse_quote!(::sumtype::traits::Iterator)).gen(
-                    &path_of_ident(enum_ident, false),
-                    ty_params.as_slice(),
-                    variants.as_slice(),
-                    impl_generics,
-                    ty_generics,
-                    where_clause
-                ) }
+                #(for trait_ in &args.bounds) {
+                    #{ SumTypeImpl::Trait(trait_.clone()).gen(
+                        &path_of_ident(enum_ident.clone(), false),
+                        ty_params.as_slice(),
+                        variants.as_slice(),
+                        impl_generics.clone(),
+                        ty_generics.clone(),
+                        where_clause.clone()
+                    ) }
+                }
             };
             (out, self)
         }
@@ -755,33 +761,33 @@ const _: () = {
     }
 };
 
-fn inner(_args: Arguments, input: TokenStream) -> TokenStream {
+fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
     if let Ok(block) = parse2::<Block>(input.clone()) {
-        let (out, block) = block.emit_items(None, false, Visibility::Inherited);
+        let (out, block) = block.emit_items(args, None, false, Visibility::Inherited);
         quote! { #out #block }
     } else if let Ok(item_trait) = parse2::<ItemTrait>(input.clone()) {
         let generics = item_trait.generics.clone();
         let vis = item_trait.vis.clone();
-        let (out, item) = Item::Trait(item_trait).emit_items(Some(&generics), false, vis);
+        let (out, item) = Item::Trait(item_trait).emit_items(args, Some(&generics), false, vis);
         quote! { #out #item }
     } else if let Ok(item_impl) = parse2::<ItemImpl>(input.clone()) {
         let generics = item_impl.generics.clone();
         let (out, item) =
-            Item::Impl(item_impl).emit_items(Some(&generics), false, Visibility::Inherited);
+            Item::Impl(item_impl).emit_items(args, Some(&generics), false, Visibility::Inherited);
         quote! { #out #item }
     } else if let Ok(item_fn) = parse2::<ItemFn>(input.clone()) {
         let generics = item_fn.sig.generics.clone();
         let vis = item_fn.vis.clone();
-        let (out, item) = Item::Fn(item_fn).emit_items(Some(&generics), false, vis);
+        let (out, item) = Item::Fn(item_fn).emit_items(args, Some(&generics), false, vis);
         quote! { #out #item }
     } else if let Ok(item_mod) = parse2::<ItemMod>(input.clone()) {
-        let (out, item) = Item::Mod(item_mod).emit_items(None, true, Visibility::Inherited);
+        let (out, item) = Item::Mod(item_mod).emit_items(args, None, true, Visibility::Inherited);
         quote! { #out #item }
     } else if let Ok(item) = parse2::<Item>(input.clone()) {
-        let (out, item) = item.emit_items(None, false, Visibility::Inherited);
+        let (out, item) = item.emit_items(args, None, false, Visibility::Inherited);
         quote! { #out #item }
     } else if let Ok(stmt) = parse2::<Stmt>(input.clone()) {
-        let (out, stmt) = stmt.emit_items(None, false, Visibility::Inherited);
+        let (out, stmt) = stmt.emit_items(args, None, false, Visibility::Inherited);
         quote! { #out #stmt }
     } else {
         abort!(input.span(), "This element is not supported")
@@ -1299,5 +1305,5 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
 #[proc_macro_error]
 #[proc_macro_attribute]
 pub fn sumtype(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
-    inner(parse_macro_input!(attr as Arguments), input.into()).into()
+    inner(&parse_macro_input!(attr as Arguments), input.into()).into()
 }
