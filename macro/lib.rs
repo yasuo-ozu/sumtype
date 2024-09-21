@@ -790,14 +790,13 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
     }
 }
 
-fn is_supported_supertrait(tpb: &TypeParamBound) -> Option<Ident> {
+fn map_supported_supertrait(tpb: &TypeParamBound) -> Option<Path> {
     match tpb {
         TypeParamBound::Trait(tb) => {
             if tb.path.is_ident("Clone")
                 || tb.path.is_ident("Copy")
                 || tb.path.is_ident("PartialEq")
                 || tb.path.is_ident("Eq")
-                || tb.path.is_ident("Hash")
                 || tb.path.get_ident().and_then(|id| {
                     if id.to_string().starts_with("__SumTrait_Sealed") {
                         Some(())
@@ -806,13 +805,17 @@ fn is_supported_supertrait(tpb: &TypeParamBound) -> Option<Ident> {
                     }
                 }) == Some(())
             {
-                tb.path.get_ident().cloned()
+                let ident = tb.path.get_ident();
+                return Some(parse_quote!(#ident));
+            } else if tb.path.is_ident("Hash") {
+                return Some(parse_quote!(::core::hash::Hash));
             } else {
-                None
+                ()
             }
         }
-        _ => None,
+        _ => (),
     }
+    abort!(tpb.span(), "Unsupported supertraits")
 }
 
 fn check_self_ty(ty: &Type) -> bool {
@@ -916,17 +919,16 @@ fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
     visitor.0
 }
 
-fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStream {
+fn sumtrait_impl(
+    args: Option<Path>,
+    marker_path: &Path,
+    krate: &Path,
+    input: ItemTrait,
+) -> TokenStream {
     let supertraits = input
         .supertraits
         .iter()
-        .map(|tpb| {
-            if let Some(id) = is_supported_supertrait(tpb) {
-                id.clone()
-            } else {
-                abort!(tpb.span(), "Not supported")
-            }
-        })
+        .filter_map(map_supported_supertrait)
         .collect::<Vec<_>>();
     for item in &input.items {
         match item {
@@ -958,7 +960,7 @@ fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStr
     quote! {
         #input
         #(for (i, ty) in typeref_types.iter().enumerate()) {
-            impl<#(for p in &input.generics.params){#p,} __Sumtype_TypeParam> #krate::TypeRef<#typeref_id, #i> for __Sumtype_TypeParam #where_clause {
+            impl<#(for p in &input.generics.params),{#p}> #krate::TypeRef<#typeref_id, #i> for #marker_path #where_clause {
                 type Type = #ty;
             }
         }
@@ -972,6 +974,7 @@ fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStr
                     /* item_trait= */  {#input},
                     /* typeref_id= */  #typeref_id,
                     /* krate= */  #krate,
+                    /* marker_path= */ #marker_path,
                     /* implementation= */  [#{args.map(|m| quote!(#m)).unwrap_or(quote!(_))}],
                 );
             };
@@ -1040,11 +1043,13 @@ struct SumtraitInternalContent {
     _comma_9: Token![,],
     krate: Path,
     _comma_10: Token![,],
+    marker_path: Path,
+    _comma_11: Token![,],
     #[syn(bracketed)]
     _bracket_token5: syn::token::Bracket,
     #[syn(in = _bracket_token5)]
     implementation: Type,
-    _comma_11: Token![,],
+    _comma_12: Token![,],
 }
 
 #[doc(hidden)]
@@ -1063,6 +1068,7 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
         item_trait,
         typeref_id,
         krate,
+        marker_path,
         implementation,
         typeref_ident,
         ..
@@ -1144,7 +1150,7 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
                 #(for input in &f.sig.inputs), {
                     #(if let FnArg::Typed(pat_type) = input) {
                         #(if let Some(index) = typerefs.get(&pat_type.ty)) {
-                            #{&pat_type.pat} #{&pat_type.colon_token} <Self as #krate::TypeRef<#typeref_id, #index>>::Type
+                            #{&pat_type.pat} #{&pat_type.colon_token} <#marker_path as #krate::TypeRef<#typeref_id, #index>>::Type
                         } #(else) {
                             #pat_type
                         }
@@ -1157,7 +1163,7 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
             #(if let ReturnType::Type(arr, ty) = &f.sig.output) {
                 #arr
                 #(if let Some(index) = typerefs.get(&ty)) {
-                    <Self as #krate::TypeRef<#typeref_id, #index>>::Type
+                    <#marker_path as #krate::TypeRef<#typeref_id, #index>>::Type
                 } #(else) {
                     #ty
                 }
@@ -1244,12 +1250,14 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
     struct SumtraitArgs {
         implement: Option<Path>,
         krate: Option<Path>,
+        marker: Path,
     }
     let args = SumtraitArgs::from_list(&NestedMeta::parse_meta_list(attr.into()).unwrap()).unwrap();
 
     let krate = args.krate.unwrap_or(parse_quote!(::sumtype));
     sumtrait_impl(
         args.implement,
+        &args.marker,
         &krate,
         parse(input).unwrap_or_else(|_| abort!(Span::call_site(), "Requires trait definition")),
     )

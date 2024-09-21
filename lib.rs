@@ -1,6 +1,26 @@
 #![doc = include_str!("README.md")]
 
-pub use sumtype_macro::{_sumtrait_internal, sumtrait};
+#[doc(hidden)]
+pub use sumtype_macro::_sumtrait_internal;
+
+/// Make an user-defined trait usable by sumtype.
+///
+/// ## Arguments
+///
+/// - `implement` (optional) ... actual implemented trait with `#[sumtype]`. This argument
+///   is used for traits of `std` (or other 3rd-party libs) to be compatible with sumtype.
+/// - `krate` (optional) ... the path to `sumtype` crate. Default is `::sumtype`.
+/// - `marker` ... You should specify as absolute path of an empty type (defined in the same
+///   crate with the trait), which is visible from user crates (who will implement the trait
+///   with `#[sumtype]`).
+///
+/// ```
+/// # use sumtype::sumtrait;
+/// pub struct Marker(::core::convert::Infallible);
+/// #[sumtrait(marker = Marker)] // In practice, `Marker` must be absolute path begins with `::`
+/// trait MyTrait {}
+/// ```
+pub use sumtype_macro::sumtrait;
 
 /// Enabling `sumtype!(..)` macro in the context.
 ///
@@ -75,13 +95,19 @@ pub mod traits {
 
     macro_rules! emit_traits {
         () => {
-            #[sumtrait(implement = ::std::io::Read, krate = $crate)]
+            #[doc(hidden)]
+            pub struct ReadMarker(::core::convert::Infallible);
+
+            #[sumtrait(implement = ::std::io::Read, krate = $crate, marker = $crate::traits::ReadMarker)]
             #[allow(private_bounds)]
             pub trait Read: __SumTrait_Sealed_Read {
                 fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
             }
 
-            #[sumtrait(implement = ::core::iter::Iterator, krate = $crate)]
+            #[doc(hidden)]
+            pub struct IteratorMarker(::core::convert::Infallible);
+
+            #[sumtrait(implement = ::core::iter::Iterator, krate = $crate, marker = $crate::traits::IteratorMarker)]
             #[allow(private_bounds)]
             pub trait Iterator: __SumTrait_Sealed_Iterator {
                 type Item;
