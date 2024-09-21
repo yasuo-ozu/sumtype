@@ -1242,7 +1242,6 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
     .into()
 }
 
-#[doc(hidden)]
 #[proc_macro_error]
 #[proc_macro_attribute]
 pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
