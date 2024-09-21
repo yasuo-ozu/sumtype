@@ -190,7 +190,6 @@ struct Arguments {
 }
 
 enum SumTypeImpl {
-    Iterator,
     Trait(Path),
 }
 
@@ -206,27 +205,6 @@ impl SumTypeImpl {
         typeref_ident: &Ident,
     ) -> TokenStream {
         match self {
-            SumTypeImpl::Iterator => {
-                quote! {
-                    impl <#(#impl_generics,)* __SumType_Item #(,#ty_params)*> ::core::iter::Iterator for #enum_path<#(#ty_generics,)*#(#ty_params),*>
-                    where
-                        #(#where_clause,)*
-                        #(for (_, ty) in variants) {
-                            #ty: ::core::iter::Iterator<Item = __SumType_Item>,
-                        }
-                    {
-                        type Item = __SumType_Item;
-                        fn next(&mut self) -> Option<Self::Item> {
-                            match self {
-                                #(for (ident, _) in variants) {
-                                    Self::#ident(__sumtype_val) => __sumtype_val.next(),
-                                }
-                                Self::__Uninhabited(_) => ::core::unreachable!(),
-                            }
-                        }
-                    }
-                }
-            }
             SumTypeImpl::Trait(trait_path) => {
                 quote! {
                     #trait_path!(
@@ -254,7 +232,7 @@ struct ExprMacroInfo {
 }
 
 struct TypeMacroInfo {
-    span: Span,
+    _span: Span,
     generic_args: Punctuated<GenericArgument, Token![,]>,
 }
 
@@ -545,7 +523,7 @@ const _: () = {
             )
             .collect::<Vec<_>>();
             self.emit_type.push(TypeMacroInfo {
-                span: mac.span(),
+                _span: mac.span(),
                 generic_args: arg.generic_args,
             });
             quote! {
@@ -925,7 +903,7 @@ fn sumtrait_impl(
     krate: &Path,
     input: ItemTrait,
 ) -> TokenStream {
-    let supertraits = input
+    let _supertraits = input
         .supertraits
         .iter()
         .filter_map(map_supported_supertrait)

@@ -139,3 +139,17 @@ mod my_module {
     }
 }
 ```
+
+# `Read` example
+
+```
+# use sumtype::sumtype;
+#[sumtype(sumtype::traits::Read)]
+fn get_read(a: usize) -> impl std::io::Read {
+    if a == 1 {
+        sumtype!(std::io::Cursor::new([0]))
+    } else {
+        sumtype!(std::io::Cursor::new(vec![0; a]))
+    }
+}
+```
