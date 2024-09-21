@@ -962,6 +962,7 @@ fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStr
                 type Type = #ty;
             }
         }
+        #[doc(hidden)]
         #[macro_export]
         macro_rules! #temporary_mac_name {
             ($($t:tt)*) => {
@@ -975,6 +976,7 @@ fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStr
                 );
             };
         }
+        #[doc(hidden)]
         #{&input.vis} use #temporary_mac_name as #{&input.ident};
     }
 }
@@ -1234,6 +1236,7 @@ pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
     .into()
 }
 
+#[doc(hidden)]
 #[proc_macro_error]
 #[proc_macro_attribute]
 pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
