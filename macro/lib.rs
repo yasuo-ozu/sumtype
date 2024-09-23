@@ -11,6 +11,8 @@ use syn::spanned::Spanned;
 use syn::*;
 use template_quote::{quote, ToTokens};
 
+mod sumtrait_internal;
+
 fn random() -> u64 {
     use std::hash::{BuildHasher, Hasher};
     std::collections::hash_map::RandomState::new()
@@ -202,12 +204,13 @@ impl SumTypeImpl {
         impl_generics: Vec<GenericParam>,
         ty_generics: Vec<GenericArgument>,
         where_clause: Vec<WherePredicate>,
-        typeref_ident: &Ident,
+        constraint_expr_trait_ident: &Ident,
     ) -> TokenStream {
         match self {
             SumTypeImpl::Trait(trait_path) => {
                 quote! {
                     #trait_path!(
+                        /* constraint_expr_trait_ident = */ #constraint_expr_trait_ident,
                         /* trait_path = */ #trait_path,
                         /* enum_path = */ #enum_path,
                         /* iter_ty_params = */ [#(#ty_params),*],
@@ -215,7 +218,6 @@ impl SumTypeImpl {
                         /* enum_impl_generics = */ [ #(#impl_generics),* ],
                         /* enum_ty_generics = */ [#(#ty_generics),*],
                         /* enum_where_clause = */ { #(#where_clause)* },
-                        /* typeref_ident = */ #typeref_ident,
                     );
                 }
             }
@@ -243,6 +245,7 @@ trait ProcessTree: Sized {
         &mut self,
         enum_path: &Path,
         typeref_path: &Path,
+        constraint_expr_trait_path: &Path,
         generics: Option<&Generics>,
         is_module: bool,
     ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>);
@@ -258,9 +261,14 @@ trait ProcessTree: Sized {
         let enum_ident = Ident::new(&format!("__Sumtype_Enum_{}", r), Span::call_site());
         let typeref_ident =
             Ident::new(&format!("__Sumtype_TypeRef_Trait_{}", r), Span::call_site());
+        let constraint_expr_trait_ident = Ident::new(
+            &format!("__Sumtype_ConstraintExprTrait_{}", r),
+            Span::call_site(),
+        );
         let (found_exprs, type_emitted) = self.collect_inline_macro(
             &path_of_ident(enum_ident.clone(), is_module),
             &path_of_ident(typeref_ident.clone(), is_module),
+            &path_of_ident(constraint_expr_trait_ident.clone(), is_module),
             generics,
             is_module,
         );
@@ -399,6 +407,14 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                     o => quote!(#o),
                 })
                 .collect();
+            let constraint_traits = (0..args.bounds.len())
+                .map(|n| {
+                    Ident::new(
+                        &format!("__Sumtype_ConstraintExprTrait_{}_{}", n, random()),
+                        Span::call_site(),
+                    )
+                })
+                .collect::<Vec<_>>();
             let out = quote! {
                 #(for reft in &reftypes) {
                     struct #reft;
@@ -419,7 +435,14 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                         )
                     ),
                 }
-                #(for trait_ in &args.bounds) {
+                trait #constraint_expr_trait_ident {}
+                impl<__Sumtype_TypeParam> #constraint_expr_trait_ident for __Sumtype_TypeParam
+                where
+                    #(for t in &constraint_traits) {
+                        __Sumtype_TypeParam: #t,
+                    }
+                {}
+                #(for (trait_, constraint_trait) in args.bounds.iter().zip(&constraint_traits)) {
                     #{ SumTypeImpl::Trait(trait_.clone()).gen(
                         &path_of_ident(enum_ident.clone(), false),
                         ty_params.as_slice(),
@@ -427,7 +450,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                         impl_generics.clone(),
                         ty_generics.clone(),
                         where_clause.clone(),
-                        &typeref_ident,
+                        constraint_trait,
                     ) }
                 }
             };
@@ -441,6 +464,7 @@ const _: () = {
     struct Visitor<'a> {
         enum_path: &'a Path,
         typeref_path: &'a Path,
+        constraint_expr_trait_path: &'a Path,
         found_exprs: Vec<ExprMacroInfo>,
         emit_type: Vec<TypeMacroInfo>,
         generics: Option<&'a Generics>,
@@ -452,10 +476,17 @@ const _: () = {
             &mut self,
             enum_path: &Path,
             typeref_path: &Path,
+            constraint_expr_trait_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
         ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>) {
-            let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
+            let mut visitor = Visitor::new(
+                enum_path,
+                typeref_path,
+                constraint_expr_trait_path,
+                generics,
+                is_module,
+            );
             visitor.visit_block_mut(self);
             (visitor.found_exprs, visitor.emit_type)
         }
@@ -466,10 +497,17 @@ const _: () = {
             &mut self,
             enum_path: &Path,
             typeref_path: &Path,
+            constraint_expr_trait_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
         ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>) {
-            let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
+            let mut visitor = Visitor::new(
+                enum_path,
+                typeref_path,
+                constraint_expr_trait_path,
+                generics,
+                is_module,
+            );
             visitor.visit_item_mut(self);
             (visitor.found_exprs, visitor.emit_type)
         }
@@ -480,10 +518,17 @@ const _: () = {
             &mut self,
             enum_path: &Path,
             typeref_path: &Path,
+            constraint_expr_trait_path: &Path,
             generics: Option<&Generics>,
             is_module: bool,
         ) -> (Vec<ExprMacroInfo>, Vec<TypeMacroInfo>) {
-            let mut visitor = Visitor::new(enum_path, typeref_path, generics, is_module);
+            let mut visitor = Visitor::new(
+                enum_path,
+                typeref_path,
+                constraint_expr_trait_path,
+                generics,
+                is_module,
+            );
             visitor.visit_stmt_mut(self);
             (visitor.found_exprs, visitor.emit_type)
         }
@@ -493,12 +538,14 @@ const _: () = {
         fn new(
             enum_path: &'a Path,
             typeref_path: &'a Path,
+            constraint_expr_trait_path: &'a Path,
             generics: Option<&'a Generics>,
             is_module: bool,
         ) -> Self {
             Self {
                 enum_path,
                 typeref_path,
+                constraint_expr_trait_path,
                 found_exprs: Vec::new(),
                 emit_type: Vec::new(),
                 generics,
@@ -688,12 +735,9 @@ const _: () = {
                             type Type = #ty;
                         }
                     }
-                    fn #id_fn_ident<#(#impl_generics,)*__SumType_T: #{&self.typeref_path} <#(#ty_generics),*>>(t: __SumType_T) -> __SumType_T
-                        #(if where_clause.len() > 0) {
-                            where #(#where_clause,)*
-                        }
+                    fn #id_fn_ident<__SumType_T: #{&self.constraint_expr_trait_path} >(t: __SumType_T) -> __SumType_T
                     { t }
-                    #id_fn_ident::<#(#ty_generics,)* _>(#{&self.enum_path}::#variant_ident(#{&arg.expr}))
+                    #id_fn_ident::<_>(#{&self.enum_path}::#variant_ident(#{&arg.expr}))
                 }
             }
         }
@@ -768,53 +812,31 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
     }
 }
 
-fn map_supported_supertrait(tpb: &TypeParamBound) -> Option<Path> {
-    match tpb {
-        TypeParamBound::Trait(tb) => {
-            if tb.path.is_ident("Clone")
-                || tb.path.is_ident("Copy")
-                || tb.path.is_ident("PartialEq")
-                || tb.path.is_ident("Eq")
-                || tb.path.get_ident().and_then(|id| {
-                    if id.to_string().starts_with("__SumTrait_Sealed") {
-                        Some(())
-                    } else {
-                        None
+fn process_supported_supertraits<'a>(
+    traits: impl IntoIterator<Item = &'a TypeParamBound>,
+    krate: &Path,
+) -> (Vec<Path>, Vec<Path>) {
+    let mut supertraits = Vec::new();
+    let mut derive_traits = Vec::new();
+    for tpb in traits.into_iter() {
+        if let TypeParamBound::Trait(tb) = tpb {
+            if let Some(ident) = tb.path.get_ident() {
+                match ident.to_string().as_str() {
+                    "Copy" | "Clone" | "Hash" | "Eq" => {
+                        supertraits.push(parse_quote!(#krate::traits::#ident))
                     }
-                }) == Some(())
-            {
-                let ident = tb.path.get_ident();
-                return Some(parse_quote!(#ident));
-            } else if tb.path.is_ident("Hash") {
-                return Some(parse_quote!(::core::hash::Hash));
-            } else {
-                ()
-            }
-        }
-        _ => (),
-    }
-    abort!(tpb.span(), "Unsupported supertraits")
-}
-
-fn check_self_ty(ty: &Type) -> bool {
-    use syn::visit::Visit;
-    struct Visitor(bool);
-    impl<'a> syn::visit::Visit<'a> for Visitor {
-        fn visit_type(&mut self, i: &Type) {
-            match i {
-                Type::Path(tp) => {
-                    if tp.path.is_ident("Self") {
-                        abort!(tp.span(), "Self is not allowed here");
-                    }
+                    "PartialEq" => derive_traits.push(parse_quote!(PartialEq)),
+                    o if o.starts_with("__SumTrait_Sealed") => (),
+                    _ => (),
                 }
-                _ => (),
+            } else {
+                supertraits.push(tb.path.clone())
             }
-            syn::visit::visit_type(self, i)
+        } else {
+            abort!(tpb.span(), "Only path is supported");
         }
     }
-    let mut visitor = Visitor(false);
-    visitor.visit_type(ty);
-    visitor.0
+    (supertraits, derive_traits)
 }
 
 fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
@@ -903,11 +925,7 @@ fn sumtrait_impl(
     krate: &Path,
     input: ItemTrait,
 ) -> TokenStream {
-    let _supertraits = input
-        .supertraits
-        .iter()
-        .filter_map(map_supported_supertrait)
-        .collect::<Vec<_>>();
+    let (supertraits, derive_traits) = process_supported_supertraits(&input.supertraits, krate);
     for item in &input.items {
         match item {
             TraitItem::Const(_) => abort!(item.span(), "associated const is not supported"),
@@ -935,6 +953,19 @@ fn sumtrait_impl(
     let typeref_types = collect_typeref_types(&input);
     let (_, _, where_clause) = input.generics.split_for_impl();
     let typeref_id = random() as usize;
+    let supertraits_constraint_traits = (0..supertraits.len())
+        .map(|n| {
+            Ident::new(
+                &format!("__SumTrait_ConstraintTrait_{}_{}", n, random()),
+                Span::call_site(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let constraint_trait = Ident::new(
+        &format!("__SumTrait_ConstraintTrait_{}", random()),
+        Span::call_site(),
+    );
+
     quote! {
         #input
         #(for (i, ty) in typeref_types.iter().enumerate()) {
@@ -942,11 +973,33 @@ fn sumtrait_impl(
                 type Type = #ty;
             }
         }
+
         #[doc(hidden)]
         #[macro_export]
         macro_rules! #temporary_mac_name {
-            ($($t:tt)*) => {
+            (
+                $constraint_expr_trait_ident:ident,
+                $($t:tt)*
+            ) => {
+                #(for (supertrait, ctr) in supertraits.iter().zip(&supertraits_constraint_traits)) {
+                    #supertrait!(#ctr,$($t)*);
+                }
+                #(if supertraits.len() > 0) {
+                    trait $constraint_expr_trait_ident {}
+                    impl<__SumTrait_TypeParam> $constraint_expr_trait_ident for __SumTrait_TypeParam
+                    where
+                        #(for t in &supertraits_constraint_traits) {
+                            __SumTrait_TypeParam: #t,
+                        }
+                        __SumTrait_TypeParam: #constraint_trait,
+                    {}
+                }
                 ::sumtype::_sumtrait_internal!(
+                    #(if supertraits.len() > 0) {
+                        #constraint_trait,
+                    } #(else) {
+                        $constraint_expr_trait_ident,
+                    }
                     $($t)*
                     /* typerefs= */  [#(#typeref_types),*],
                     /* item_trait= */  {#input},
@@ -962,262 +1015,11 @@ fn sumtrait_impl(
     }
 }
 
-#[derive(syn_derive::Parse)]
-struct IdentAndType {
-    ident: Ident,
-    _colon_token: Token![:],
-    ty: Type,
-}
-
-#[derive(syn_derive::Parse)]
-struct SumtraitInternalContent {
-    trait_path: Path,
-    _comma_0: Token![,],
-    enum_path: Path,
-    _comma_1: Token![,],
-    #[syn(bracketed)]
-    _bracket_token0: syn::token::Bracket,
-    #[syn(in = _bracket_token0)]
-    #[parse(Punctuated::parse_terminated)]
-    iter_ty_params: Punctuated<Ident, Token![,]>,
-    _comma_2: Token![,],
-    #[syn(bracketed)]
-    _bracket_token1: syn::token::Bracket,
-    #[syn(in = _bracket_token1)]
-    #[parse(Punctuated::parse_terminated)]
-    variants: Punctuated<IdentAndType, Token![,]>,
-    _comma_3: Token![,],
-    #[syn(bracketed)]
-    _bracket_token2: syn::token::Bracket,
-    #[syn(in = _bracket_token2)]
-    #[parse(Punctuated::parse_terminated)]
-    enum_impl_generics: Punctuated<GenericParam, Token![,]>,
-    _comma_4: Token![,],
-    #[syn(bracketed)]
-    _bracket_token3: syn::token::Bracket,
-    #[syn(in = _bracket_token3)]
-    #[parse(Punctuated::parse_terminated)]
-    enum_ty_generics: Punctuated<GenericArgument, Token![,]>,
-    _comma_5: Token![,],
-    #[syn(braced)]
-    _brace_token1: syn::token::Brace,
-    #[syn(in = _brace_token1)]
-    enum_where_clause: TokenStream,
-    _comma_6: Token![,],
-    typeref_ident: Ident,
-    _comma_61: Token![,],
-    #[syn(bracketed)]
-    _bracket_token4: syn::token::Bracket,
-    #[syn(in = _bracket_token4)]
-    #[parse(Punctuated::parse_terminated)]
-    typerefs: Punctuated<Type, Token![,]>,
-    _comma_7: Token![,],
-    #[syn(braced)]
-    _brace_token: syn::token::Brace,
-    #[syn(in = _brace_token)]
-    item_trait: ItemTrait,
-    _comma_8: Token![,],
-    typeref_id: LitInt,
-    _comma_9: Token![,],
-    krate: Path,
-    _comma_10: Token![,],
-    marker_path: Path,
-    _comma_11: Token![,],
-    #[syn(bracketed)]
-    _bracket_token5: syn::token::Bracket,
-    #[syn(in = _bracket_token5)]
-    implementation: Type,
-    _comma_12: Token![,],
-}
-
 #[doc(hidden)]
 #[proc_macro_error]
 #[proc_macro]
 pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
-    let SumtraitInternalContent {
-        trait_path,
-        enum_path,
-        iter_ty_params,
-        variants,
-        enum_impl_generics,
-        enum_ty_generics,
-        enum_where_clause,
-        typerefs,
-        item_trait,
-        typeref_id,
-        krate,
-        marker_path,
-        implementation,
-        typeref_ident,
-        ..
-    } = parse(input).unwrap_or_else(|e| abort!(Span::call_site(), format!("Bad content: {}", e)));
-    let implementation = if let Type::Path(TypePath { path, .. }) = implementation {
-        path
-    } else {
-        trait_path
-    };
-    let mut generic_params = item_trait
-        .generics
-        .params
-        .iter()
-        .chain(&enum_impl_generics)
-        .collect::<Vec<_>>();
-    generic_params.sort_by(|lhs, rhs| {
-        use std::cmp::Ordering;
-        if lhs == rhs {
-            Ordering::Equal
-        } else {
-            match (lhs, rhs) {
-                (GenericParam::Lifetime(_), _)
-                | (GenericParam::Const(_), GenericParam::Type(_)) => Ordering::Less,
-                _ => Ordering::Greater,
-            }
-        }
-    });
-    let assoc_types = item_trait
-        .items
-        .iter()
-        .filter_map(|item| match item {
-            TraitItem::Type(c) => Some((
-                Ident::new(
-                    &format!("__SumType_AssocType_{}", &c.ident),
-                    Span::call_site(),
-                ),
-                c.clone(),
-            )),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let (_, iter_ty_generics, _) = split_for_impl(Some(&item_trait.generics));
-    let typerefs: HashMap<Type, usize> = typerefs
-        .into_iter()
-        .enumerate()
-        .map(|(l, r)| (r, l))
-        .collect();
-    let iter_fn = item_trait.items.iter().filter_map(|item| {
-            if let TraitItem::Fn(f) = item { Some(f) } else { None }}
-    ).map(|f| {
-        if f.sig.inputs.len() == 0 {
-            abort!(f.span(), "Require receiver");
-        }
-        let the_receiver = if let FnArg::Receiver(Receiver {self_token,..}) = &f.sig.inputs[0] {
-            self_token.clone()
-        } else {
-            abort!(f.span(), "Require receiver");
-        };
-        let mut arg_idents = Vec::new();
-        for arg in f.sig.inputs.iter().skip(1) {
-            if let FnArg::Typed(pat_type) = arg {
-                check_self_ty(pat_type.ty.as_ref());
-                if let Pat::Ident(pi) = pat_type.pat.as_ref() {
-                    arg_idents.push(pi);
-                } else {
-                    abort!(pat_type.pat.span(), "Pattern is not allowed");
-                }
-            } else {
-                abort!(arg.span(), "Bad receiver");
-            }
-        }
-        if let ReturnType::Type(_, ty) = &f.sig.output {
-            check_self_ty(ty.as_ref());
-        }
-        let (fn_impl_generics, _, fn_where_clause) = f.sig.generics.split_for_impl();
-        quote! {
-            #{&f.sig.constness} #{&f.sig.asyncness} #{&f.sig.unsafety}
-            #{&f.sig.abi} fn #{&f.sig.ident} #fn_impl_generics (
-                #(for input in &f.sig.inputs), {
-                    #(if let FnArg::Typed(pat_type) = input) {
-                        #(if let Some(index) = typerefs.get(&pat_type.ty)) {
-                            #{&pat_type.pat} #{&pat_type.colon_token} <#marker_path as #krate::TypeRef<#typeref_id, #index>>::Type
-                        } #(else) {
-                            #pat_type
-                        }
-                    } #(else) {
-                        #input
-                    }
-                }
-                #{&f.sig.variadic}
-            )
-            #(if let ReturnType::Type(arr, ty) = &f.sig.output) {
-                #arr
-                #(if let Some(index) = typerefs.get(&ty)) {
-                    <#marker_path as #krate::TypeRef<#typeref_id, #index>>::Type
-                } #(else) {
-                    #ty
-                }
-            } #fn_where_clause {
-                match #the_receiver {
-                    #(for IdentAndType{ident, ty, ..} in &variants) {
-                        #enum_path::#ident(__sumtype_inner_val) =>
-                            <#ty as #implementation<
-                                #(#iter_ty_generics),*
-                            >>::#{&f.sig.ident}(
-                                __sumtype_inner_val
-                                #(,#arg_idents)*
-                            ),
-                    }
-                    Self::__Uninhabited(_) => ::core::unreachable!(),
-                }
-            }
-        }
-    });
-    let typeref_ty_generics = enum_ty_generics
-        .into_iter()
-        .map(|ga| quote!(#ga))
-        .collect::<Vec<_>>();
-    let enum_ty_generics = typeref_ty_generics
-        .iter()
-        .cloned()
-        .chain(iter_ty_params.iter().map(|ident| quote!(#ident)))
-        .collect::<Vec<_>>();
-    let impl_generics = generic_params
-        .iter()
-        .map(|i| quote!(#i))
-        .chain(assoc_types.iter().map(|(c, _)| quote!(#c)))
-        .chain(iter_ty_params.iter().map(|ident| quote!(#ident)))
-        .collect::<Vec<_>>();
-    quote! {
-        impl<#(#impl_generics),*> #typeref_ident <#(#typeref_ty_generics),*>
-            for #enum_path <#(#enum_ty_generics),*>
-         where
-            #enum_where_clause
-            #(if enum_where_clause.to_string().len() > 0) { , }
-            #(for IdentAndType{ty, ..} in &variants) {
-                #ty: #implementation<
-                    #(#iter_ty_generics),*
-                    #(if iter_ty_generics.len() > 0 && assoc_types.len() > 0) { , }
-                    #(for (atp, at) in &assoc_types),{
-                        #{&at.ident} = #atp
-                    }
-                >,
-            }
-        {
-            type Type = ();
-        }
-        impl <#(#impl_generics),*> #implementation<#(for p in &item_trait.generics.params),{#p}>
-            for #enum_path<#(#enum_ty_generics),*>
-        where
-            #enum_where_clause
-            #(if enum_where_clause.to_string().len() > 0) { , }
-            #(for IdentAndType{ty, ..} in &variants) {
-                #ty: #implementation<
-                    #(#iter_ty_generics),*
-                    #(if iter_ty_generics.len() > 0 && assoc_types.len() > 0) { , }
-                    #(for (atp, at) in &assoc_types), {
-                        #{&at.ident} = #atp
-                    }
-                >,
-            }
-        {
-            #(for (atp, at) in &assoc_types) {
-                #(let (at_impl_trait, _, at_where) = at.generics.split_for_impl()) {
-                    type #{&at.ident} #at_impl_trait = #atp #at_where;
-                }
-            }
-            #(#iter_fn)*
-        }
-    }
-    .into()
+    sumtrait_internal::sumtrait_internal(input.into()).into()
 }
 
 #[proc_macro_error]

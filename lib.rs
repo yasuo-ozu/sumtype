@@ -100,11 +100,11 @@ pub mod traits {
             /// Target of [`sumtype::sumtype`] macro, which implements [`std::marker::Copy`].
             #[sumtrait(implement = ::core::marker::Copy, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
-            pub trait Copy: __SumTrait_Sealed {
+            pub trait Copy: __SumTrait_Sealed + Clone {
             }
 
             /// Target of [`sumtype::sumtype`] macro, which implements [`std::marker::Clone`].
-            #[sumtrait(implement = ::core::marker::Clone, krate = $crate, marker = $crate::traits::Marker)]
+            #[sumtrait(implement = ::core::clone::Clone, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Clone: __SumTrait_Sealed {
                 fn clone(&self) -> Self;
@@ -113,7 +113,7 @@ pub mod traits {
             /// Target of [`sumtype::sumtype`] macro, which implements [`std::cmp::Ord`].
             #[sumtrait(implement = ::core::cmp::Ord, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
-            pub trait Ord: __SumTrait_Sealed {
+            pub trait Ord: __SumTrait_Sealed + Eq + PartialOrd {
                 fn cmp(&self, other: &Self) -> core::cmp::Ordering;
             }
         };
