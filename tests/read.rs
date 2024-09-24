@@ -1,6 +1,7 @@
 use std::io::Read;
 use sumtype::sumtype;
 
+#[allow(unused)]
 #[sumtype(sumtype::traits::Read)]
 fn f1(a: bool) -> impl Read {
     if a {

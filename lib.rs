@@ -14,6 +14,25 @@ pub use sumtype_macro::_sumtrait_internal;
 ///   crate with the trait), which is visible from user crates (who will implement the trait
 ///   with `#[sumtype]`).
 ///
+/// ## Supertraits
+///
+/// You can specify supertraits using `trait ... : <supertraits> { ... }` syntax. All supertraits
+/// should be also annotated by `#[sumtrait]` and specified with absolute path for practice.
+///
+/// ## Sumtrait-safe
+///
+/// All traits annotated by `#[sumtrait]` must satisfy sumtrait-safety. This is like object safety,
+/// but slightly different.
+///
+/// A trait is called sumtrait safe when it satisfies all of them:
+///
+/// - The trait should not receive any generic arguments.
+/// - All supertraits of the trait are also sumtrait-safe and annotated by `#[sumtrait]`.
+/// - All trait items are either associated types or associated functions.
+/// - All associated functions have zero or one input parameter including the receiver, whose
+///   type is `Self`, `&Self` or `&mut Self`. Other parameters should not contain `Self` types.
+/// - All associated functions should return `Self` type, or returns types which does not
+///   contain `Self` types.
 /// ```
 /// # use sumtype::sumtrait;
 /// pub struct Marker(::core::convert::Infallible);
@@ -85,36 +104,50 @@ pub mod traits {
             /// Target of [`sumtype::sumtype`] macro, which implements [`std::io::Read`].
             #[sumtrait(implement = ::std::io::Read, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
-            pub trait Read: __SumTrait_Sealed {
+            pub trait Read {
                 fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
+            }
+
+            impl<T: ::std::io::Read> Read for T {
+                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                    T::read(self, buf)
+                }
             }
 
             /// Target of [`sumtype::sumtype`] macro, which implements [`std::iter::Iterator`].
             #[sumtrait(implement = ::core::iter::Iterator, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
-            pub trait Iterator: __SumTrait_Sealed {
+            pub trait Iterator {
                 type Item;
                 fn next(&mut self) -> Option<Self::Item>;
+            }
+
+            impl<T: ::core::iter::Iterator> Iterator for T {
+                type Item = T::Item;
+                fn next(&mut self) -> Option<Self::Item> {
+                    T::next(self)
+                }
             }
 
             /// Target of [`sumtype::sumtype`] macro, which implements [`std::marker::Copy`].
             #[sumtrait(implement = ::core::marker::Copy, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
-            pub trait Copy: __SumTrait_Sealed + Clone {
+            pub trait Copy: $crate::traits::Clone {
             }
+
+            impl<T: ::core::marker::Copy> Copy for T {}
 
             /// Target of [`sumtype::sumtype`] macro, which implements [`std::marker::Clone`].
             #[sumtrait(implement = ::core::clone::Clone, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
-            pub trait Clone: __SumTrait_Sealed {
+            pub trait Clone {
                 fn clone(&self) -> Self;
             }
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::cmp::Ord`].
-            #[sumtrait(implement = ::core::cmp::Ord, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Ord: __SumTrait_Sealed + Eq + PartialOrd {
-                fn cmp(&self, other: &Self) -> core::cmp::Ordering;
+            impl<T: ::core::clone::Clone> Clone for T {
+                fn clone(&self) -> Self {
+                    T::clone(self)
+                }
             }
         };
     }

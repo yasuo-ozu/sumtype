@@ -199,7 +199,7 @@ impl SumTypeImpl {
     fn gen(
         &self,
         enum_path: &Path,
-        ty_params: &[Ident],
+        unspecified_ty_params: &[Ident],
         variants: &[(Ident, Type)],
         impl_generics: Vec<GenericParam>,
         ty_generics: Vec<GenericArgument>,
@@ -213,11 +213,11 @@ impl SumTypeImpl {
                         /* constraint_expr_trait_ident = */ #constraint_expr_trait_ident,
                         /* trait_path = */ #trait_path,
                         /* enum_path = */ #enum_path,
-                        /* iter_ty_params = */ [#(#ty_params),*],
+                        /* unspecified_ty_params = */ [#(#unspecified_ty_params),*],
                         /* variants = */ [#(for (id, ty) in variants),{#id:#ty}],
-                        /* enum_impl_generics = */ [ #(#impl_generics),* ],
-                        /* enum_ty_generics = */ [#(#ty_generics),*],
-                        /* enum_where_clause = */ { #(#where_clause)* },
+                        /* impl_generics_base = */ [ #(#impl_generics),* ],
+                        /* ty_generics_base = */ [#(#ty_generics),*],
+                        /* where_clause_base = */ { #(#where_clause)* },
                     );
                 }
             }
@@ -253,7 +253,7 @@ trait ProcessTree: Sized {
     fn emit_items(
         mut self,
         args: &Arguments,
-        generics: Option<&Generics>,
+        generics_env: Option<&Generics>,
         is_module: bool,
         vis: Visibility,
     ) -> (TokenStream, Self) {
@@ -269,14 +269,14 @@ trait ProcessTree: Sized {
             &path_of_ident(enum_ident.clone(), is_module),
             &path_of_ident(typeref_ident.clone(), is_module),
             &path_of_ident(constraint_expr_trait_ident.clone(), is_module),
-            generics,
+            generics_env,
             is_module,
         );
         let reftypes = found_exprs
             .iter()
             .filter_map(|info| info.reftype_ident.clone())
             .collect::<Vec<_>>();
-        let (impl_generics, _, where_clause) = split_for_impl(generics);
+        let (impl_generics_env, _, where_clause_env) = split_for_impl(generics_env);
         if found_exprs.len() == 0 {
             abort!(Span::call_site(), "Cannot find any sumtype!() in expr");
         }
@@ -344,7 +344,7 @@ trait ProcessTree: Sized {
             }
         }
         let mut impl_generics =
-            merge_generic_params(impl_generics, expr_generics.params).collect::<Vec<_>>();
+            merge_generic_params(impl_generics_env, expr_generics.params).collect::<Vec<_>>();
         for g in impl_generics.iter_mut() {
             if let GenericParam::Type(TypeParam { ident, bounds, .. }) = g {
                 if let Some(bs) = analyzed.get(ident) {
@@ -365,9 +365,9 @@ trait ProcessTree: Sized {
             .map(|wc| wc.predicates)
             .into_iter()
             .flatten()
-            .chain(where_clause)
+            .chain(where_clause_env)
             .collect::<Vec<_>>();
-        let (ty_params, variants) = found_exprs.iter().enumerate().fold(
+        let (unspecified_ty_params, variants) = found_exprs.iter().enumerate().fold(
             (vec![], vec![]),
             |(mut ty_params, mut variants), (i, info)| {
                 if let Some(reft) = &info.reftype_ident {
@@ -422,8 +422,8 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                 trait #typeref_ident <#(#impl_generics),*> { type Type; }
                 #vis enum #enum_ident <
                     #(#impl_generics),*
-                    #(if impl_generics.len() > 0 && ty_params.len() > 0) { , }
-                    #(#ty_params),*
+                    #(if impl_generics.len() > 0 && unspecified_ty_params.len() > 0) { , }
+                    #(#unspecified_ty_params),*
                 > {
                     #(for (ident, ty) in &variants) {
                         #ident ( #ty ),
@@ -435,17 +435,18 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                         )
                     ),
                 }
-                trait #constraint_expr_trait_ident {}
-                impl<__Sumtype_TypeParam> #constraint_expr_trait_ident for __Sumtype_TypeParam
+                trait #constraint_expr_trait_ident<#(#impl_generics),*> {}
+                impl<#(#impl_generics,)*__Sumtype_TypeParam> #constraint_expr_trait_ident<#(#ty_generics),*> for __Sumtype_TypeParam
                 where
                     #(for t in &constraint_traits) {
-                        __Sumtype_TypeParam: #t,
+                        __Sumtype_TypeParam: #t<#(#ty_generics),*>,
                     }
+                    #(#where_clause,)*
                 {}
                 #(for (trait_, constraint_trait) in args.bounds.iter().zip(&constraint_traits)) {
                     #{ SumTypeImpl::Trait(trait_.clone()).gen(
                         &path_of_ident(enum_ident.clone(), false),
-                        ty_params.as_slice(),
+                        unspecified_ty_params.as_slice(),
                         variants.as_slice(),
                         impl_generics.clone(),
                         ty_generics.clone(),
@@ -735,9 +736,14 @@ const _: () = {
                             type Type = #ty;
                         }
                     }
-                    fn #id_fn_ident<__SumType_T: #{&self.constraint_expr_trait_path} >(t: __SumType_T) -> __SumType_T
+                    fn #id_fn_ident<
+                        #(#impl_generics,)* __SumType_T: #{&self.constraint_expr_trait_path}<#(#ty_generics),*>
+                    >(t: __SumType_T) -> __SumType_T
+                    #(if where_clause.len() > 0) {
+                        where #(#where_clause,)*
+                    }
                     { t }
-                    #id_fn_ident::<_>(#{&self.enum_path}::#variant_ident(#{&arg.expr}))
+                    #id_fn_ident::<#(#ty_generics,)*_>(#{&self.enum_path}::#variant_ident(#{&arg.expr}))
                 }
             }
         }
@@ -953,19 +959,6 @@ fn sumtrait_impl(
     let typeref_types = collect_typeref_types(&input);
     let (_, _, where_clause) = input.generics.split_for_impl();
     let typeref_id = random() as usize;
-    let supertraits_constraint_traits = (0..supertraits.len())
-        .map(|n| {
-            Ident::new(
-                &format!("__SumTrait_ConstraintTrait_{}_{}", n, random()),
-                Span::call_site(),
-            )
-        })
-        .collect::<Vec<_>>();
-    let constraint_trait = Ident::new(
-        &format!("__SumTrait_ConstraintTrait_{}", random()),
-        Span::call_site(),
-    );
-
     quote! {
         #input
         #(for (i, ty) in typeref_types.iter().enumerate()) {
@@ -977,36 +970,17 @@ fn sumtrait_impl(
         #[doc(hidden)]
         #[macro_export]
         macro_rules! #temporary_mac_name {
-            (
-                $constraint_expr_trait_ident:ident,
-                $($t:tt)*
-            ) => {
-                #(for (supertrait, ctr) in supertraits.iter().zip(&supertraits_constraint_traits)) {
-                    #supertrait!(#ctr,$($t)*);
-                }
-                #(if supertraits.len() > 0) {
-                    trait $constraint_expr_trait_ident {}
-                    impl<__SumTrait_TypeParam> $constraint_expr_trait_ident for __SumTrait_TypeParam
-                    where
-                        #(for t in &supertraits_constraint_traits) {
-                            __SumTrait_TypeParam: #t,
-                        }
-                        __SumTrait_TypeParam: #constraint_trait,
-                    {}
-                }
+            ($($t:tt)*) => {
                 ::sumtype::_sumtrait_internal!(
-                    #(if supertraits.len() > 0) {
-                        #constraint_trait,
-                    } #(else) {
-                        $constraint_expr_trait_ident,
-                    }
-                    $($t)*
+                    { $($t)* }
                     /* typerefs= */  [#(#typeref_types),*],
                     /* item_trait= */  {#input},
                     /* typeref_id= */  #typeref_id,
                     /* krate= */  #krate,
                     /* marker_path= */ #marker_path,
                     /* implementation= */  [#{args.map(|m| quote!(#m)).unwrap_or(quote!(_))}],
+                    /* supertraits= */ [#(#supertraits),*],
+                    /* derive_traits= */ [#(#derive_traits),*],
                 );
             };
         }

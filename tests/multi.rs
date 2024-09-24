@@ -1,5 +1,6 @@
 use sumtype::sumtype;
 
+#[allow(unused)]
 #[sumtype(sumtype::traits::Iterator + sumtype::traits::Clone)]
 fn f(a: usize) -> impl Iterator<Item = usize> + Clone {
     match a {

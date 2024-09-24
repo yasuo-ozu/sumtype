@@ -1,4 +1,4 @@
-use super::split_for_impl;
+use super::{random, split_for_impl};
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use proc_macro_error::abort;
@@ -7,6 +7,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
 use template_quote::quote;
+use template_quote::ToTokens;
 
 #[derive(syn_derive::Parse)]
 struct IdentAndType {
@@ -15,8 +16,14 @@ struct IdentAndType {
     ty: Type,
 }
 
+impl ToTokens for IdentAndType {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        self.ident.to_tokens(tokens);
+        self.ty.to_tokens(tokens);
+    }
+}
 #[derive(syn_derive::Parse)]
-struct SumtraitInternalContent {
+struct SumtraitInternalContextInner {
     constraint_expr_trait_ident: Ident,
     _comma_61: Token![,],
     trait_path: Path,
@@ -27,7 +34,7 @@ struct SumtraitInternalContent {
     _bracket_token0: syn::token::Bracket,
     #[syn(in = _bracket_token0)]
     #[parse(Punctuated::parse_terminated)]
-    iter_ty_params: Punctuated<Ident, Token![,]>,
+    unspecified_ty_params: Punctuated<Ident, Token![,]>,
     _comma_2: Token![,],
     #[syn(bracketed)]
     _bracket_token1: syn::token::Bracket,
@@ -39,19 +46,27 @@ struct SumtraitInternalContent {
     _bracket_token2: syn::token::Bracket,
     #[syn(in = _bracket_token2)]
     #[parse(Punctuated::parse_terminated)]
-    enum_impl_generics: Punctuated<GenericParam, Token![,]>,
+    impl_generics_base: Punctuated<GenericParam, Token![,]>,
     _comma_4: Token![,],
     #[syn(bracketed)]
     _bracket_token3: syn::token::Bracket,
     #[syn(in = _bracket_token3)]
     #[parse(Punctuated::parse_terminated)]
-    enum_ty_generics: Punctuated<GenericArgument, Token![,]>,
+    ty_generics_base: Punctuated<GenericArgument, Token![,]>,
     _comma_5: Token![,],
     #[syn(braced)]
     _brace_token1: syn::token::Brace,
     #[syn(in = _brace_token1)]
-    enum_where_clause: TokenStream,
+    where_clause_base: TokenStream,
     _comma_6: Token![,],
+}
+
+#[derive(syn_derive::Parse)]
+struct SumtraitInternalContent {
+    #[syn(braced)]
+    _brace_token0: syn::token::Brace,
+    #[syn(in = _brace_token0)]
+    inner: SumtraitInternalContextInner,
     #[syn(bracketed)]
     _bracket_token4: syn::token::Bracket,
     #[syn(in = _bracket_token4)]
@@ -74,6 +89,18 @@ struct SumtraitInternalContent {
     #[syn(in = _bracket_token5)]
     implementation: Type,
     _comma_12: Token![,],
+    #[syn(bracketed)]
+    _bracket_token6: syn::token::Bracket,
+    #[syn(in = _bracket_token6)]
+    #[parse(Punctuated::parse_terminated)]
+    supertraits: Punctuated<Path, Token![,]>,
+    _comma_13: Token![,],
+    #[syn(bracketed)]
+    _bracket_token7: syn::token::Bracket,
+    #[syn(in = _bracket_token7)]
+    #[parse(Punctuated::parse_terminated)]
+    derive_traits: Punctuated<Ident, Token![,]>,
+    _comma_14: Token![,],
 }
 
 fn has_self_ty(ty: &Type) -> Option<Span> {
@@ -233,36 +260,8 @@ fn process_fn(
     }
 }
 
-pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
-    let SumtraitInternalContent {
-        trait_path,
-        enum_path,
-        iter_ty_params,
-        variants,
-        enum_impl_generics,
-        enum_ty_generics,
-        enum_where_clause,
-        typerefs,
-        item_trait,
-        typeref_id,
-        krate,
-        marker_path,
-        implementation,
-        constraint_expr_trait_ident,
-        ..
-    } = parse2(input).unwrap_or_else(|e| abort!(Span::call_site(), format!("Bad content: {}", e)));
-    let implementation = if let Type::Path(TypePath { path, .. }) = implementation {
-        path
-    } else {
-        trait_path
-    };
-    let mut generic_params = item_trait
-        .generics
-        .params
-        .iter()
-        .chain(&enum_impl_generics)
-        .collect::<Vec<_>>();
-    generic_params.sort_by(|lhs, rhs| {
+fn sort_impl_generics(a: &mut [&GenericParam]) {
+    a.sort_by(|lhs, rhs| {
         use std::cmp::Ordering;
         if lhs == rhs {
             Ordering::Equal
@@ -274,6 +273,67 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
             }
         }
     });
+}
+
+fn arr_to_ts<I: IntoIterator>(a: I) -> impl Iterator<Item = TokenStream>
+where
+    I::Item: ToTokens,
+{
+    a.into_iter().map(|a| quote!(#a))
+}
+
+pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
+    let SumtraitInternalContent {
+        inner:
+            SumtraitInternalContextInner {
+                trait_path,
+                enum_path,
+                unspecified_ty_params,
+                variants,
+                impl_generics_base,
+                ty_generics_base,
+                where_clause_base,
+                constraint_expr_trait_ident,
+                ..
+            },
+        typerefs,
+        item_trait,
+        typeref_id,
+        krate,
+        marker_path,
+        implementation,
+        supertraits,
+        derive_traits,
+        ..
+    } = parse2(input.clone())
+        .unwrap_or_else(|e| abort!(Span::call_site(), format!("Bad content: {}", e)));
+
+    #[derive(syn_derive::Parse)]
+    struct TraitIdentAndOther {
+        #[syn(braced)]
+        _brace_token0: syn::token::Brace,
+        #[syn(in = _brace_token0)]
+        _trait_ident: Ident,
+        #[syn(in = _brace_token0)]
+        _comma_61: Token![,],
+        #[syn(in = _brace_token0)]
+        other: TokenStream,
+        _other2: TokenStream,
+    }
+    let trait_ident_and_other: TraitIdentAndOther = parse2(input).unwrap();
+    let implementation = if let Type::Path(TypePath { path, .. }) = implementation {
+        path
+    } else {
+        trait_path.clone()
+    };
+    let mut impl_generics_merged = item_trait
+        .generics
+        .params
+        .iter()
+        .chain(&impl_generics_base)
+        .collect::<Vec<_>>();
+    sort_impl_generics(impl_generics_merged.as_mut_slice());
+    let impl_generics_base = arr_to_ts(&impl_generics_base).collect::<Vec<_>>();
     let assoc_types = item_trait
         .items
         .iter()
@@ -288,57 +348,78 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
             _ => None,
         })
         .collect::<Vec<_>>();
-    let (_, iter_ty_generics, _) = split_for_impl(Some(&item_trait.generics));
-    let typerefs: HashMap<Type, usize> = typerefs
-        .into_iter()
+    let (_, ty_generics_trait, _) = split_for_impl(Some(&item_trait.generics));
+    let mapped_typerefs: HashMap<Type, usize> = typerefs
+        .iter()
+        .cloned()
         .enumerate()
         .map(|(l, r)| (r, l))
         .collect();
-    let typeref_ty_generics = enum_ty_generics
+    let ty_generics_base = ty_generics_base
         .into_iter()
-        .map(|ga| quote!(#ga))
+        .map(|a| quote!(#a))
         .collect::<Vec<_>>();
-    let enum_ty_generics = typeref_ty_generics
+    let ty_generics_enum = ty_generics_base
         .iter()
         .cloned()
-        .chain(iter_ty_params.iter().map(|ident| quote!(#ident)))
+        .chain(unspecified_ty_params.iter().map(|ident| quote!(#ident)))
         .collect::<Vec<_>>();
-    let impl_generics = generic_params
+    let impl_generics = impl_generics_merged
         .iter()
         .map(|i| quote!(#i))
         .chain(assoc_types.iter().map(|(c, _)| quote!(#c)))
-        .chain(iter_ty_params.iter().map(|ident| quote!(#ident)))
+        .chain(unspecified_ty_params.iter().map(|ident| quote!(#ident)))
+        .collect::<Vec<_>>();
+    let supertraits_constraint_traits = (0..supertraits.len())
+        .map(|n| {
+            Ident::new(
+                &format!("__SumTrait_ConstraintTrait_{}_{}", n, random()),
+                Span::call_site(),
+            )
+        })
         .collect::<Vec<_>>();
     quote! {
-        trait #constraint_expr_trait_ident {}
-        impl<#(#impl_generics),*> #constraint_expr_trait_ident
-            for #enum_path <#(#enum_ty_generics),*>
+        #(for (supertrait, constraint_trait) in supertraits.iter().zip(&supertraits_constraint_traits)) {
+            #supertrait!(
+                #constraint_trait,
+                #{&trait_ident_and_other.other}
+            );
+        }
+        trait #constraint_expr_trait_ident<#(#impl_generics_base),*> {}
+        impl<#(#impl_generics),*> #constraint_expr_trait_ident<#(#ty_generics_base),*>
+            for #enum_path <#(#ty_generics_enum),*>
          where
-            #enum_where_clause
-            #(if enum_where_clause.to_string().len() > 0) { , }
+            #where_clause_base
+            #(if where_clause_base.to_string().len() > 0) { , }
             #(for IdentAndType{ty, ..} in &variants) {
                 #ty: #implementation<
-                    #(#iter_ty_generics),*
-                    #(if iter_ty_generics.len() > 0 && assoc_types.len() > 0) { , }
+                    #(#ty_generics_trait),*
+                    #(if ty_generics_trait.len() > 0 && assoc_types.len() > 0) { , }
                     #(for (atp, at) in &assoc_types),{
                         #{&at.ident} = #atp
                     }
                 >,
             }
+            #(for constraint_trait in &supertraits_constraint_traits) {
+                Self: #constraint_trait<#(#ty_generics_base),*>,
+            }
         { }
         impl <#(#impl_generics),*> #implementation<#(for p in &item_trait.generics.params),{#p}>
-            for #enum_path<#(#enum_ty_generics),*>
+            for #enum_path<#(#ty_generics_enum),*>
         where
-            #enum_where_clause
-            #(if enum_where_clause.to_string().len() > 0) { , }
+            #where_clause_base
+            #(if where_clause_base.to_string().len() > 0) { , }
             #(for IdentAndType{ty, ..} in &variants) {
                 #ty: #implementation<
-                    #(#iter_ty_generics),*
-                    #(if iter_ty_generics.len() > 0 && assoc_types.len() > 0) { , }
+                    #(#ty_generics_trait),*
+                    #(if ty_generics_trait.len() > 0 && assoc_types.len() > 0) { , }
                     #(for (atp, at) in &assoc_types), {
                         #{&at.ident} = #atp
                     }
                 >,
+            }
+            #(for supertrait in &supertraits) {
+                Self: #supertrait,
             }
         {
             #(for (atp, at) in &assoc_types) {
@@ -351,9 +432,9 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
             )) {
                 #{process_fn(
                     f,
-                    &typerefs,
+                    &mapped_typerefs,
                     &variants,
-                    &iter_ty_generics,
+                    &ty_generics_trait,
                     &enum_path,
                     &krate,
                     &marker_path,

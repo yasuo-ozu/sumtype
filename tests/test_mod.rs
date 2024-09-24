@@ -1,11 +1,13 @@
 use sumtype::sumtype;
 #[sumtype(sumtype::traits::Iterator)]
 mod my_module {
+    #[allow(unused)]
     pub struct MyStruct {
         iter: sumtype!(),
     }
 
     impl MyStruct {
+        #[allow(unused)]
         pub fn new(flag: bool) -> Self {
             let iter = if flag {
                 sumtype!(0..5, std::ops::Range<u32>) // Wraps a range iterator
@@ -15,6 +17,7 @@ mod my_module {
             MyStruct { iter }
         }
 
+        #[allow(unused)]
         pub fn iterate(self) {
             for value in self.iter {
                 println!("{}", value);
