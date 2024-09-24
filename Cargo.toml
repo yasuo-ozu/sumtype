@@ -2,7 +2,7 @@
 name = "sumtype"
 description = "Generate zerocost sumtype of iterators or closures"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
-version = "0.2.0"
+version = "0.2.1"
 repository = "https://github.com/yasuo-ozu/sumtype"
 edition = "2021"
 keywords = ["macros", "zerocost", "enum", "union-type", "iterator"]
@@ -13,7 +13,7 @@ license = "MIT"
 path = "lib.rs"
 
 [dependencies]
-sumtype-macro = { path = "macro", version = "0.2.0" }
+sumtype-macro = { path = "macro", version = "0.2.1" }
 
 [workspace]
 
