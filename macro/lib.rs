@@ -417,9 +417,12 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                 .collect::<Vec<_>>();
             let out = quote! {
                 #(for reft in &reftypes) {
+                    #[doc(hidden)]
                     struct #reft;
                 }
+                #[doc(hidden)]
                 trait #typeref_ident <#(#impl_generics),*> { type Type; }
+                #[doc(hidden)]
                 #vis enum #enum_ident <
                     #(#impl_generics),*
                     #(if impl_generics.len() > 0 && unspecified_ty_params.len() > 0) { , }
@@ -435,6 +438,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                         )
                     ),
                 }
+                #[doc(hidden)]
                 trait #constraint_expr_trait_ident<#(#impl_generics),*> {}
                 impl<#(#impl_generics,)*__Sumtype_TypeParam> #constraint_expr_trait_ident<#(#ty_generics),*> for __Sumtype_TypeParam
                 where
@@ -786,8 +790,9 @@ const _: () = {
 };
 
 fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
+    let public = Visibility::Public(Default::default());
     if let Ok(block) = parse2::<Block>(input.clone()) {
-        let (out, block) = block.emit_items(args, None, false, Visibility::Inherited);
+        let (out, block) = block.emit_items(args, None, false, public);
         quote! { #out #block }
     } else if let Ok(item_trait) = parse2::<ItemTrait>(input.clone()) {
         let generics = item_trait.generics.clone();
@@ -796,8 +801,7 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
         quote! { #out #item }
     } else if let Ok(item_impl) = parse2::<ItemImpl>(input.clone()) {
         let generics = item_impl.generics.clone();
-        let (out, item) =
-            Item::Impl(item_impl).emit_items(args, Some(&generics), false, Visibility::Inherited);
+        let (out, item) = Item::Impl(item_impl).emit_items(args, Some(&generics), false, public);
         quote! { #out #item }
     } else if let Ok(item_fn) = parse2::<ItemFn>(input.clone()) {
         let generics = item_fn.sig.generics.clone();
@@ -805,13 +809,13 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
         let (out, item) = Item::Fn(item_fn).emit_items(args, Some(&generics), false, vis);
         quote! { #out #item }
     } else if let Ok(item_mod) = parse2::<ItemMod>(input.clone()) {
-        let (out, item) = Item::Mod(item_mod).emit_items(args, None, true, Visibility::Inherited);
+        let (out, item) = Item::Mod(item_mod).emit_items(args, None, true, public);
         quote! { #out #item }
     } else if let Ok(item) = parse2::<Item>(input.clone()) {
-        let (out, item) = item.emit_items(args, None, false, Visibility::Inherited);
+        let (out, item) = item.emit_items(args, None, false, public);
         quote! { #out #item }
     } else if let Ok(stmt) = parse2::<Stmt>(input.clone()) {
-        let (out, stmt) = stmt.emit_items(args, None, false, Visibility::Inherited);
+        let (out, stmt) = stmt.emit_items(args, None, false, public);
         quote! { #out #stmt }
     } else {
         abort!(input.span(), "This element is not supported")
