@@ -217,7 +217,7 @@ impl SumTypeImpl {
                         /* variants = */ [#(for (id, ty) in variants),{#id:#ty}],
                         /* impl_generics_base = */ [ #(#impl_generics),* ],
                         /* ty_generics_base = */ [#(#ty_generics),*],
-                        /* where_clause_base = */ { #(#where_clause)* },
+                        /* where_clause_base = */ { #(#where_clause),* },
                     );
                 }
             }
