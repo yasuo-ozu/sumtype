@@ -975,7 +975,7 @@ fn sumtrait_impl(
         #[macro_export]
         macro_rules! #temporary_mac_name {
             ($($t:tt)*) => {
-                ::sumtype::_sumtrait_internal!(
+                #krate::_sumtrait_internal!(
                     { $($t)* }
                     /* typerefs= */  [#(#typeref_types),*],
                     /* item_trait= */  {#input},
@@ -996,12 +996,14 @@ fn sumtrait_impl(
 #[doc(hidden)]
 #[proc_macro_error]
 #[proc_macro]
+#[proc_debug::proc_debug]
 pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
     sumtrait_internal::sumtrait_internal(input.into()).into()
 }
 
 #[proc_macro_error]
 #[proc_macro_attribute]
+#[proc_debug::proc_debug]
 pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
     #[derive(FromMeta, Debug)]
     struct SumtraitArgs {
@@ -1085,6 +1087,7 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
 /// ```
 #[proc_macro_error]
 #[proc_macro_attribute]
+#[proc_debug::proc_debug]
 pub fn sumtype(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
     inner(&parse_macro_input!(attr as Arguments), input.into()).into()
 }
