@@ -793,30 +793,30 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
     let public = Visibility::Public(Default::default());
     if let Ok(block) = parse2::<Block>(input.clone()) {
         let (out, block) = block.emit_items(args, None, false, public);
-        quote! { #out #block }
+        quote! { #out #[allow(non_local_definitions)] #block }
     } else if let Ok(item_trait) = parse2::<ItemTrait>(input.clone()) {
         let generics = item_trait.generics.clone();
         let vis = item_trait.vis.clone();
         let (out, item) = Item::Trait(item_trait).emit_items(args, Some(&generics), false, vis);
-        quote! { #out #item }
+        quote! { #out #[allow(non_local_definitions)] #item }
     } else if let Ok(item_impl) = parse2::<ItemImpl>(input.clone()) {
         let generics = item_impl.generics.clone();
         let (out, item) = Item::Impl(item_impl).emit_items(args, Some(&generics), false, public);
-        quote! { #out #item }
+        quote! { #out #[allow(non_local_definitions)] #item }
     } else if let Ok(item_fn) = parse2::<ItemFn>(input.clone()) {
         let generics = item_fn.sig.generics.clone();
         let vis = item_fn.vis.clone();
         let (out, item) = Item::Fn(item_fn).emit_items(args, Some(&generics), false, vis);
-        quote! { #out #item }
+        quote! { #out #[allow(non_local_definitions)] #item }
     } else if let Ok(item_mod) = parse2::<ItemMod>(input.clone()) {
         let (out, item) = Item::Mod(item_mod).emit_items(args, None, true, public);
-        quote! { #out #item }
+        quote! { #out #[allow(non_local_definitions)] #item }
     } else if let Ok(item) = parse2::<Item>(input.clone()) {
         let (out, item) = item.emit_items(args, None, false, public);
-        quote! { #out #item }
+        quote! { #out #[allow(non_local_definitions)] #item }
     } else if let Ok(stmt) = parse2::<Stmt>(input.clone()) {
         let (out, stmt) = stmt.emit_items(args, None, false, public);
-        quote! { #out #stmt }
+        quote! { #out #[allow(non_local_definitions)] #stmt }
     } else {
         abort!(input.span(), "This element is not supported")
     }

@@ -99,6 +99,7 @@ struct SumtraitInternalContent {
     _bracket_token7: syn::token::Bracket,
     #[syn(in = _bracket_token7)]
     #[parse(Punctuated::parse_terminated)]
+    #[allow(unused)]
     derive_traits: Punctuated<Ident, Token![,]>,
     _comma_14: Token![,],
 }
@@ -303,7 +304,7 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
         marker_path,
         implementation,
         supertraits,
-        derive_traits,
+        derive_traits: _,
         ..
     } = parse2(input.clone())
         .unwrap_or_else(|e| abort!(Span::call_site(), format!("Bad content: {}", e)));
