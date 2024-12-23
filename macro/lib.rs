@@ -378,11 +378,15 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
             let out = quote! {
                 #(for reft in &reftypes) {
                     #[doc(hidden)]
+                    #[allow(non_camel_case_types)]
+                    #[allow(non_camel_case_types)]
                     struct #reft;
                 }
                 #[doc(hidden)]
+                #[allow(non_camel_case_types)]
                 trait #typeref_ident <#(#impl_generics),*> { type Type; }
                 #[doc(hidden)]
+                #[allow(non_camel_case_types)]
                 #vis enum #enum_ident <
                     #(#impl_generics),*
                     #(if !impl_generics.is_empty() && !unspecified_ty_params.is_empty()) { , }
@@ -399,6 +403,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                     ),
                 }
                 #[doc(hidden)]
+                #[allow(non_camel_case_types)]
                 trait #constraint_expr_trait_ident<#(#impl_generics),*> {}
                 impl<#(#impl_generics,)*__Sumtype_TypeParam> #constraint_expr_trait_ident<#(#ty_generics),*> for __Sumtype_TypeParam
                 where

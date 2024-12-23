@@ -384,6 +384,7 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
                 #{&trait_ident_and_other.other}
             );
         }
+        #[allow(non_camel_case_types)]
         trait #constraint_expr_trait_ident<#(#impl_generics_base),*> {}
         impl<#(#impl_generics),*> #constraint_expr_trait_ident<#(#ty_generics_base),*>
             for #enum_path <#(#ty_generics_enum),*>
