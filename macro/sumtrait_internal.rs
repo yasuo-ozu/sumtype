@@ -107,16 +107,13 @@ struct SumtraitInternalContent {
 fn has_self_ty(ty: &Type) -> Option<Span> {
     use syn::visit::Visit;
     struct Visitor(Option<Span>);
-    impl<'a> syn::visit::Visit<'a> for Visitor {
+    impl syn::visit::Visit<'_> for Visitor {
         fn visit_type(&mut self, i: &Type) {
-            match i {
-                Type::Path(tp) => {
-                    if tp.path.is_ident("Self") {
-                        self.0 = Some(tp.path.span());
-                        return;
-                    }
+            if let Type::Path(tp) = i {
+                if tp.path.is_ident("Self") {
+                    self.0 = Some(tp.path.span());
+                    return;
                 }
-                _ => (),
             }
             syn::visit::visit_type(self, i)
         }
@@ -197,6 +194,7 @@ fn generate_fn_args(
     (ret, recv, return_is_self)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_fn(
     item_fn: &TraitItemFn,
     typerefs: &HashMap<Type, usize>,
@@ -229,7 +227,7 @@ fn process_fn(
         )
         #(if let ReturnType::Type(arr, ty) = &item_fn.sig.output) {
             #arr
-            #(if let Some(index) = typerefs.get(&ty)) {
+            #(if let Some(index) = typerefs.get(ty)) {
                 <#marker_path as #krate::TypeRef<#typeref_id, #index>>::Type
             } #(else) {
                 #ty
@@ -391,11 +389,11 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
             for #enum_path <#(#ty_generics_enum),*>
          where
             #where_clause_base
-            #(if where_clause_base.to_string().len() > 0) { , }
+            #(if !where_clause_base.to_string().is_empty()) { , }
             #(for IdentAndType{ty, ..} in &variants) {
                 #ty: #implementation<
                     #(#ty_generics_trait),*
-                    #(if ty_generics_trait.len() > 0 && assoc_types.len() > 0) { , }
+                    #(if !ty_generics_trait.is_empty() && !assoc_types.is_empty()) { , }
                     #(for (atp, at) in &assoc_types),{
                         #{&at.ident} = #atp
                     }
@@ -409,11 +407,11 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
             for #enum_path<#(#ty_generics_enum),*>
         where
             #where_clause_base
-            #(if where_clause_base.to_string().len() > 0) { , }
+            #(if !where_clause_base.to_string().is_empty()) { , }
             #(for IdentAndType{ty, ..} in &variants) {
                 #ty: #implementation<
                     #(#ty_generics_trait),*
-                    #(if ty_generics_trait.len() > 0 && assoc_types.len() > 0) { , }
+                    #(if !ty_generics_trait.is_empty() && !assoc_types.is_empty()) { , }
                     #(for (atp, at) in &assoc_types), {
                         #{&at.ident} = #atp
                     }

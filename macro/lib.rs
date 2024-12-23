@@ -39,48 +39,27 @@ fn merge_generic_params(
     let it1 = args1.into_iter();
     let it2 = args2.into_iter();
     it1.clone()
-        .filter(|arg| {
-            if let GenericParam::Lifetime(_) = arg {
-                true
-            } else {
-                false
-            }
-        })
-        .chain(it2.clone().filter(|arg| {
-            if let GenericParam::Lifetime(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it1.clone().filter(|arg| {
-            if let GenericParam::Const(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it2.clone().filter(|arg| {
-            if let GenericParam::Const(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it1.clone().filter(|arg| {
-            if let GenericParam::Type(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it2.clone().filter(|arg| {
-            if let GenericParam::Type(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
+        .filter(|arg| matches!(arg, GenericParam::Lifetime(_)))
+        .chain(
+            it2.clone()
+                .filter(|arg| matches!(arg, GenericParam::Lifetime(_))),
+        )
+        .chain(
+            it1.clone()
+                .filter(|arg| matches!(arg, GenericParam::Const(_))),
+        )
+        .chain(
+            it2.clone()
+                .filter(|arg| matches!(arg, GenericParam::Const(_))),
+        )
+        .chain(
+            it1.clone()
+                .filter(|arg| matches!(arg, GenericParam::Type(_))),
+        )
+        .chain(
+            it2.clone()
+                .filter(|arg| matches!(arg, GenericParam::Type(_))),
+        )
 }
 
 fn merge_generic_args(
@@ -90,59 +69,42 @@ fn merge_generic_args(
     let it1 = args1.into_iter();
     let it2 = args2.into_iter();
     it1.clone()
-        .filter(|arg| {
-            if let GenericArgument::Lifetime(_) = arg {
-                true
-            } else {
-                false
-            }
-        })
-        .chain(it2.clone().filter(|arg| {
-            if let GenericArgument::Lifetime(_) = arg {
-                true
-            } else {
-                false
-            }
+        .filter(|arg| matches!(arg, GenericArgument::Lifetime(_)))
+        .chain(
+            it2.clone()
+                .filter(|arg| matches!(arg, GenericArgument::Lifetime(_))),
+        )
+        .chain(
+            it1.clone()
+                .filter(|arg| matches!(arg, GenericArgument::Const(_))),
+        )
+        .chain(
+            it2.clone()
+                .filter(|arg| matches!(arg, GenericArgument::Const(_))),
+        )
+        .chain(
+            it1.clone()
+                .filter(|arg| matches!(arg, GenericArgument::Type(_))),
+        )
+        .chain(
+            it2.clone()
+                .filter(|arg| matches!(arg, GenericArgument::Type(_))),
+        )
+        .chain(it1.filter(|arg| {
+            matches!(
+                arg,
+                GenericArgument::AssocType(_)
+                    | GenericArgument::AssocConst(_)
+                    | GenericArgument::Constraint(_)
+            )
         }))
-        .chain(it1.clone().filter(|arg| {
-            if let GenericArgument::Const(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it2.clone().filter(|arg| {
-            if let GenericArgument::Const(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it1.clone().filter(|arg| {
-            if let GenericArgument::Type(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it2.clone().filter(|arg| {
-            if let GenericArgument::Type(_) = arg {
-                true
-            } else {
-                false
-            }
-        }))
-        .chain(it1.filter(|arg| match arg {
-            GenericArgument::AssocType(_)
-            | GenericArgument::AssocConst(_)
-            | GenericArgument::Constraint(_) => true,
-            _ => false,
-        }))
-        .chain(it2.filter(|arg| match arg {
-            GenericArgument::AssocType(_)
-            | GenericArgument::AssocConst(_)
-            | GenericArgument::Constraint(_) => true,
-            _ => false,
+        .chain(it2.filter(|arg| {
+            matches!(
+                arg,
+                GenericArgument::AssocType(_)
+                    | GenericArgument::AssocConst(_)
+                    | GenericArgument::Constraint(_)
+            )
         }))
 }
 
@@ -196,6 +158,7 @@ enum SumTypeImpl {
 }
 
 impl SumTypeImpl {
+    #[allow(clippy::too_many_arguments)]
     fn gen(
         &self,
         enum_path: &Path,
@@ -277,7 +240,7 @@ trait ProcessTree: Sized {
             .filter_map(|info| info.reftype_ident.clone())
             .collect::<Vec<_>>();
         let (impl_generics_env, _, where_clause_env) = split_for_impl(generics_env);
-        if found_exprs.len() == 0 {
+        if found_exprs.is_empty() {
             abort!(Span::call_site(), "Cannot find any sumtype!() in expr");
         }
         let expr_generics_list = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
@@ -290,32 +253,33 @@ trait ProcessTree: Sized {
             abort!(expr_gparams[0].0.span(), "Generic argument mismatch");
         }
         let expr_generics = expr_generics_list.into_iter().next().unwrap().0;
-        let mut analyzed = found_exprs.iter().fold(HashMap::new(), |mut acc, info| {
-            for (id, lts) in &info.analyzed_bounds {
-                acc.entry(id.clone())
-                    .or_insert(HashSet::new())
-                    .extend(lts.iter().map(|lt| TypeParamBound::Lifetime(lt.clone())));
-            }
-            acc
-        });
+        let mut analyzed = found_exprs.iter().fold(
+            HashMap::new(),
+            |mut acc: HashMap<Ident, HashSet<TypeParamBound>>, info| {
+                for (id, lts) in &info.analyzed_bounds {
+                    acc.entry(id.clone())
+                        .or_default()
+                        .extend(lts.iter().map(|lt| TypeParamBound::Lifetime(lt.clone())));
+                }
+                acc
+            },
+        );
         if let Some(where_clause) = &expr_generics.where_clause {
             for pred in &where_clause.predicates {
-                match pred {
-                    WherePredicate::Type(PredicateType {
-                        bounded_ty, bounds, ..
-                    }) => {
-                        if let Type::Path(path) = bounded_ty {
-                            if path.qself.is_none() {
-                                if let Some(id) = path.path.get_ident() {
-                                    analyzed
-                                        .entry(id.clone())
-                                        .or_insert(HashSet::new())
-                                        .extend(bounds.clone());
-                                }
-                            }
+                if let WherePredicate::Type(PredicateType {
+                    bounded_ty: Type::Path(path),
+                    bounds,
+                    ..
+                }) = pred
+                {
+                    if path.qself.is_none() {
+                        if let Some(id) = path.path.get_ident() {
+                            analyzed
+                                .entry(id.clone())
+                                .or_insert(HashSet::new())
+                                .extend(bounds.clone());
                         }
                     }
-                    _ => (),
                 }
             }
         }
@@ -327,15 +291,14 @@ trait ProcessTree: Sized {
             .collect::<Vec<_>>();
         for info in &type_emitted {
             if info.generic_args.len() != expr_garg.len()
-                || !expr_garg
-                    .iter()
-                    .zip(&info.generic_args)
-                    .all(|two| match two {
+                || !expr_garg.iter().zip(&info.generic_args).all(|two| {
+                    matches!(
+                        two,
                         (GenericArgument::Lifetime(_), GenericArgument::Lifetime(_))
-                        | (GenericArgument::Const(_), GenericArgument::Const(_))
-                        | (GenericArgument::Type(_), GenericArgument::Type(_)) => true,
-                        _ => false,
-                    })
+                            | (GenericArgument::Const(_), GenericArgument::Const(_))
+                            | (GenericArgument::Type(_), GenericArgument::Type(_))
+                    )
+                })
             {
                 abort!(
                     info.generic_args.span(),
@@ -385,11 +348,8 @@ trait ProcessTree: Sized {
             },
         );
         if let (Some(info), true) = (
-            found_exprs
-                .iter()
-                .filter(|info| info.reftype_ident.is_none())
-                .next(),
-            type_emitted.len() > 0,
+            found_exprs.iter().find(|info| info.reftype_ident.is_none()),
+            !type_emitted.is_empty(),
         ) {
             abort!(
                 &info.span,
@@ -425,7 +385,7 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                 #[doc(hidden)]
                 #vis enum #enum_ident <
                     #(#impl_generics),*
-                    #(if impl_generics.len() > 0 && unspecified_ty_params.len() > 0) { , }
+                    #(if !impl_generics.is_empty() && !unspecified_ty_params.is_empty()) { , }
                     #(#unspecified_ty_params),*
                 > {
                     #(for (ident, ty) in &variants) {
@@ -569,8 +529,7 @@ const _: () = {
             let ty_generics = merge_generic_args(
                 self.generics
                     .iter()
-                    .map(|g| g.params.iter().cloned().map(generic_param_to_arg))
-                    .flatten(),
+                    .flat_map(|g| g.params.iter().cloned().map(generic_param_to_arg)),
                 arg.generic_args.clone(),
             )
             .collect::<Vec<_>>();
@@ -580,7 +539,7 @@ const _: () = {
             });
             quote! {
                 #{&self.enum_path}
-                #(if ty_generics.len() > 0){
+                #(if !ty_generics.is_empty()){
                     <#(#ty_generics),*>
                 }
             }
@@ -598,7 +557,7 @@ const _: () = {
                 result: HashMap<Ident, HashSet<Lifetime>>,
             }
             use syn::visit::Visit;
-            impl<'ast> syn::visit::Visit<'ast> for LifetimeVisitor {
+            impl syn::visit::Visit<'_> for LifetimeVisitor {
                 fn visit_type_reference(&mut self, i: &TypeReference) {
                     if let Some(lt) = &i.lifetime {
                         if self.generic_lifetimes.contains(lt) {
@@ -616,7 +575,7 @@ const _: () = {
                             if self.generic_params.contains(id) {
                                 self.result
                                     .entry(id.clone())
-                                    .or_insert(HashSet::new())
+                                    .or_default()
                                     .extend(self.lifetime_stack.clone());
                             }
                             return;
@@ -686,12 +645,12 @@ const _: () = {
             let (mut impl_generics, _, where_clause) = split_for_impl(self.generics);
             let analyzed =
                 if let (Some(generics), Some(ty)) = (self.generics.as_ref(), arg.ty.as_ref()) {
-                    self.analyze_lifetime_bounds(*generics, ty)
+                    self.analyze_lifetime_bounds(generics, ty)
                 } else {
                     HashMap::new()
                 };
             let generics = Generics {
-                params: arg.for_generics.clone().unwrap_or(Default::default()),
+                params: arg.for_generics.clone().unwrap_or_default(),
                 where_clause: arg.where_clause.unwrap_or(Some(WhereClause {
                     predicates: Punctuated::new(),
                     where_token: Default::default(),
@@ -733,7 +692,7 @@ const _: () = {
                 {
                     #(if let Some(ty) = &arg.ty){
                         impl<#(#impl_generics,)*> #{&self.typeref_path} <#(#ty_generics),*> for #reftype_path
-                            #(if where_clause.len() > 0) {
+                            #(if !where_clause.is_empty()) {
                                 where #(#where_clause,)*
                             }
                         {
@@ -743,7 +702,7 @@ const _: () = {
                     fn #id_fn_ident<
                         #(#impl_generics,)* __SumType_T: #{&self.constraint_expr_trait_path}<#(#ty_generics),*>
                     >(t: __SumType_T) -> __SumType_T
-                    #(if where_clause.len() > 0) {
+                    #(if !where_clause.is_empty()) {
                         where #(#where_clause,)*
                     }
                     { t }
@@ -753,7 +712,7 @@ const _: () = {
         }
     }
 
-    impl<'a> VisitMut for Visitor<'a> {
+    impl VisitMut for Visitor<'_> {
         fn visit_type_mut(&mut self, ty: &mut Type) {
             if let Type::Macro(tm) = &*ty {
                 if tm.mac.path.is_ident("sumtype") {
@@ -875,7 +834,7 @@ fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
                 }
             })
             .collect::<Vec<_>>();
-        impl<'a> syn::visit::Visit<'a> for Visitor {
+        impl syn::visit::Visit<'_> for Visitor {
             fn visit_type(&mut self, i: &Type) {
                 match i {
                     Type::ImplTrait(_) | Type::Verbatim(_) | Type::Infer(_) | Type::Macro(_) => {
@@ -892,7 +851,8 @@ fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
                     }
                     Type::Path(tp) => {
                         if tp.qself.is_none() && self.2.iter().any(|ident| tp.path.is_ident(ident))
-                            || (tp.path.segments.len() >= 1 && &tp.path.segments[0].ident == "Self")
+                            || (!tp.path.segments.is_empty()
+                                && &tp.path.segments[0].ident == "Self")
                         {
                             self.0 = false;
                         }
@@ -915,7 +875,7 @@ fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
     }
     use syn::visit::Visit;
     struct Visitor(Vec<Type>, Generics);
-    impl<'a> syn::visit::Visit<'a> for Visitor {
+    impl syn::visit::Visit<'_> for Visitor {
         fn visit_type(&mut self, i: &Type) {
             if can_make_typeref_type(i, &self.1) {
                 self.0.push(i.clone());
@@ -940,7 +900,7 @@ fn sumtrait_impl(
         match item {
             TraitItem::Const(_) => abort!(item.span(), "associated const is not supported"),
             TraitItem::Fn(tfn) => {
-                if tfn.sig.inputs.len() == 0 || !matches!(&tfn.sig.inputs[0], FnArg::Receiver(_)) {
+                if tfn.sig.inputs.is_empty() || !matches!(&tfn.sig.inputs[0], FnArg::Receiver(_)) {
                     abort!(tfn.sig.span(), "requires receiver")
                 }
             }
@@ -948,7 +908,7 @@ fn sumtrait_impl(
                 if tty.default.is_some() {
                     abort!(tty.span(), "associated type defaults is not supported")
                 }
-                if tty.generics.params.len() > 0 || tty.generics.where_clause.is_some() {
+                if !tty.generics.params.is_empty() || tty.generics.where_clause.is_some() {
                     abort!(
                         tty.generics.span(),
                         "generalized associated types is not supported"
@@ -996,14 +956,12 @@ fn sumtrait_impl(
 #[doc(hidden)]
 #[proc_macro_error]
 #[proc_macro]
-#[proc_debug::proc_debug]
 pub fn _sumtrait_internal(input: TokenStream1) -> TokenStream1 {
     sumtrait_internal::sumtrait_internal(input.into()).into()
 }
 
 #[proc_macro_error]
 #[proc_macro_attribute]
-#[proc_debug::proc_debug]
 pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
     #[derive(FromMeta, Debug)]
     struct SumtraitArgs {
@@ -1087,7 +1045,6 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
 /// ```
 #[proc_macro_error]
 #[proc_macro_attribute]
-#[proc_debug::proc_debug]
 pub fn sumtype(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
     inner(&parse_macro_input!(attr as Arguments), input.into()).into()
 }
