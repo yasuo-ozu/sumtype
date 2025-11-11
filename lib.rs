@@ -105,7 +105,7 @@ pub mod traits {
             #[sumtrait(implement = ::std::io::Read, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Read {
-                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize>;
+                fn read(&mut self, buf: &mut [::core::primitive::u8]) -> ::std::io::Result<::core::primitive::usize>;
             }
 
             impl<T: ::std::io::Read> Read for T {
@@ -119,7 +119,7 @@ pub mod traits {
             #[allow(private_bounds)]
             pub trait Iterator {
                 type Item;
-                fn next(&mut self) -> Option<Self::Item>;
+                fn next(&mut self) -> ::core::option::Option<Self::Item>;
             }
 
             impl<T: ::core::iter::Iterator> Iterator for T {
@@ -149,6 +149,33 @@ pub mod traits {
                     T::clone(self)
                 }
             }
+
+            /// Target of [`sumtype::sumtype`] macro, which implements [`std::fmt::Display`].
+            #[sumtrait(implement = ::core::fmt::Display, krate = $crate, marker = $crate::traits::Marker)]
+            #[allow(private_bounds)]
+            pub trait Display {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result;
+            }
+
+            impl<T: ::core::fmt::Display> Display for T {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    T::fmt(self, f)
+                }
+            }
+
+            /// Target of [`sumtype::sumtype`] macro, which implements [`std::fmt::Debug`].
+            #[sumtrait(implement = ::core::fmt::Debug, krate = $crate, marker = $crate::traits::Marker)]
+            #[allow(private_bounds)]
+            pub trait Debug {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result;
+            }
+
+            impl<T: ::core::fmt::Debug> Debug for T {
+                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
+                    T::fmt(self, f)
+                }
+            }
+
         };
     }
     emit_traits!();

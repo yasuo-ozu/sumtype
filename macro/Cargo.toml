@@ -20,6 +20,7 @@ proc-macro-error = "1.0"
 derive-syn-parse = "0.1.5"
 darling = "0.20.10"
 syn_derive = "0.1.8"
+type-leak = "0.3.0"
 
 [dependencies.syn]
 version = "2.0"

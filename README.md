@@ -183,6 +183,8 @@ The `sumtype` crate provides built-in support for several common traits:
 - **[`sumtype::traits::Read`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Read.html)** - For types implementing [`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html)  
 - **[`sumtype::traits::Clone`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Clone.html)** - For types implementing [`std::clone::Clone`](https://doc.rust-lang.org/std/clone/trait.Clone.html)
 - **[`sumtype::traits::Copy`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Copy.html)** - For types implementing [`std::marker::Copy`](https://doc.rust-lang.org/std/marker/trait.Copy.html)
+- **[`sumtype::traits::Debug`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Debug.html)** - For types implementing [`std::fmt::Debug`](https://doc.rust-lang.org/std/fmt/trait.Debug.html)
+- **[`sumtype::traits::Display`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Display.html)** - For types implementing [`std::fmt::Display`](https://doc.rust-lang.org/std/fmt/trait.Display.html)
 
 ### More Examples
 
@@ -215,6 +217,38 @@ fn get_cloneable(use_string: bool) -> impl Clone {
     }
 }
 ```
+
+#### Working with Debug and Display traits
+
+```rust
+use sumtype::sumtype;
+
+#[sumtype(sumtype::traits::Debug)]
+fn get_debuggable(use_int: bool) -> impl std::fmt::Debug {
+    if use_int {
+        sumtype!(42i32)
+    } else {
+        sumtype!(String::from("hello"))
+    }
+}
+
+#[sumtype(sumtype::traits::Display)]
+fn get_displayable(use_int: bool) -> impl std::fmt::Display {
+    if use_int {
+        sumtype!(42i32)
+    } else {
+        sumtype!("Static string")
+    }
+}
+
+// Usage
+let debug_item = get_debuggable(true);
+println!("Debug: {:?}", debug_item); // "Debug: 42"
+
+let display_item = get_displayable(false);
+println!("Display: {}", display_item); // "Display: Static string"
+```
+
 
 ## Custom Traits
 

@@ -10,6 +10,7 @@ use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
 use template_quote::{quote, ToTokens};
+use type_leak::*;
 
 mod sumtrait_internal;
 
@@ -814,84 +815,14 @@ fn process_supported_supertraits<'a>(
 }
 
 fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
-    fn can_make_typeref_type(ty: &Type, generics: &Generics) -> bool {
-        use syn::visit::Visit;
-        struct Visitor(bool, Vec<Ident>, Vec<Ident>);
-        let generics_param_tys = generics
-            .params
-            .iter()
-            .filter_map(|p| {
-                if let GenericParam::Type(TypeParam { ident, .. }) = p {
-                    Some(ident.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        let generics_param_vals = generics
-            .params
-            .iter()
-            .filter_map(|p| {
-                if let GenericParam::Const(ConstParam { ident, .. }) = p {
-                    Some(ident.clone())
-                } else {
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-        impl syn::visit::Visit<'_> for Visitor {
-            fn visit_type(&mut self, i: &Type) {
-                match i {
-                    Type::ImplTrait(_) | Type::Verbatim(_) | Type::Infer(_) | Type::Macro(_) => {
-                        self.0 = false;
-                    }
-                    Type::Reference(TypeReference { lifetime, .. }) => {
-                        if let Some(lifetime) = lifetime {
-                            if &lifetime.ident != "static" {
-                                self.0 = false;
-                            }
-                        } else {
-                            self.0 = false;
-                        }
-                    }
-                    Type::Path(tp) => {
-                        if tp.qself.is_none() && self.2.iter().any(|ident| tp.path.is_ident(ident))
-                            || (!tp.path.segments.is_empty()
-                                && &tp.path.segments[0].ident == "Self")
-                        {
-                            self.0 = false;
-                        }
-                    }
-                    _ => (),
-                }
-                syn::visit::visit_type(self, i)
-            }
-            fn visit_expr(&mut self, i: &Expr) {
-                if let Expr::Path(ExprPath { qself, path, .. }) = i {
-                    if qself.is_none() && self.1.iter().any(|ident| path.is_ident(ident)) {
-                        self.0 = false;
-                    }
-                }
-            }
-        }
-        let mut visitor = Visitor(true, generics_param_tys, generics_param_vals);
-        visitor.visit_type(ty);
-        visitor.0
-    }
-    use syn::visit::Visit;
-    struct Visitor(Vec<Type>, Generics);
-    impl syn::visit::Visit<'_> for Visitor {
-        fn visit_type(&mut self, i: &Type) {
-            if can_make_typeref_type(i, &self.1) {
-                self.0.push(i.clone());
-            } else {
-                syn::visit::visit_type(self, i)
-            }
-        }
-    }
-    let mut visitor = Visitor(Vec::new(), input.generics.clone());
-    visitor.visit_item_trait(input);
-    visitor.0
+    let mut leaker = Leaker::from_trait(input)
+        .unwrap_or_else(|_| Leaker::with_generics(input.generics.clone()));
+    leaker.self_ty_can_be_interned = false;
+    leaker
+        .finish()
+        .iter()
+        .cloned()
+        .collect()
 }
 
 fn sumtrait_impl(
