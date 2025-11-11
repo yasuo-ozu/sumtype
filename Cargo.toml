@@ -15,6 +15,9 @@ path = "lib.rs"
 [dependencies]
 sumtype-macro = { path = "macro", version = "0.2.5" }
 
+[dev-dependencies]
+trybuild = "1.0"
+
 [workspace]
 
 members = [

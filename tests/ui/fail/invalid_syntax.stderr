@@ -1,0 +1,5 @@
+error: unexpected end of input, expected an expression
+ --> tests/ui/fail/invalid_syntax.rs:6:14
+  |
+6 |     sumtype!()
+  |              ^

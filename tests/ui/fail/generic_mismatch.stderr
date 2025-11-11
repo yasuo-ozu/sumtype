@@ -1,0 +1,5 @@
+error: The generic arguments are incompatible with generic params in expression.
+ --> tests/ui/fail/generic_mismatch.rs:4:45
+  |
+4 | fn generic_mismatch(flag: bool) -> sumtype!['a] {
+  |                                             ^^
