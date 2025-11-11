@@ -986,11 +986,11 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
     .into()
 }
 
-/// Enabling `sumtype!(..)` macro in the context.
+/// Enables `sumtype!(..)` macro in the context.
 ///
-/// For each context marked by `#[sumtype]`, sumtype makes an union type of several
+/// For each context marked by `#[sumtype]`, sumtype creates a union type of several
 /// [`std::iter::Iterator`] types. To intern an expression of `Iterator` into the union type, you
-/// can use `sumtype!([expr])` syntax. This is an example of returning unified `Iterator`:
+/// can use `sumtype!([expr])` syntax. This is an example of returning a unified `Iterator`:
 ///
 /// ```
 /// # use sumtype::sumtype;
@@ -1005,13 +1005,13 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
 /// }
 /// ```
 ///
-/// This function returns [`std::iter::Once`] or [`std::vec::IntoIter`] depends on `a` value. The
-/// `#[sumtype]` system make annonymous union type that is also [`std::iter::Iterator`], and wrap
-/// each `sumtype!(..)` expression with the union type. The mechanism is zerocost when `a` is fixed
-/// in the compile process.
+/// This function returns [`std::iter::Once`] or [`std::vec::IntoIter`] depending on the `a` value. The
+/// `#[sumtype]` system creates an anonymous union type that is also [`std::iter::Iterator`], and wraps
+/// each `sumtype!(..)` expression with the union type. The mechanism is zero-cost when `a` is fixed
+/// at compile time.
 ///
-/// You can place exact (non-annonymous) type using `sumtype!()` macro in type context. In this
-/// way, you should specify type using `sumtype!([expr], [type])` format like:
+/// You can specify the exact (non-anonymous) type using `sumtype!()` macro in type context. In this
+/// case, you should specify the type using `sumtype!([expr], [type])` format like:
 ///
 /// ```
 /// # use sumtype::sumtype;
@@ -1026,8 +1026,8 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
 /// }
 /// ```
 ///
-/// You may need to use additional generic parameters in `[ty]`, the following example will be
-/// useful:
+/// You may need to use additional generic parameters in `[ty]`. The following example
+/// demonstrates this:
 ///
 /// ```
 /// # use sumtype::sumtype;

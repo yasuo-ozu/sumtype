@@ -7,41 +7,76 @@
 [GitHub Actions]: https://github.com/yasuo-ozu/sumtype/actions/workflows/rust.yml/badge.svg
 [actions]: https://github.com/yasuo-ozu/sumtype/actions/workflows/rust.yml
 
-In Rust, when a function needs to return different types of iterators based on its arguments, it can be challenging because even if the iterators return the same type of elements, they are considered to have different types. This makes it impossible to simply use a return statement to return them directly. A common solution to this problem is to use `Box<dyn Iterator>`, but this approach has two drawbacks: it incurs extra heap memory usage, and it does not provide zero-cost abstraction. Additionally, the elements returned by the iterator must have a 'static lifetime.
+In Rust, when a function needs to return different types that implement the same trait based on its arguments, it can be challenging because even if the types provide the same interface, they are considered to have different concrete types. This makes it impossible to simply use a return statement to return them directly. A common solution to this problem is to use `Box<dyn Trait>`, but this approach has two drawbacks: it incurs extra heap memory usage, and it does not provide zero-cost abstraction. Additionally, the types must often have a `'static` lifetime.
 
 Here’s an example to illustrate this:
 
-```
+```rust
+// Example with Iterator trait
 fn conditional_iterator(flag: bool) -> Box<dyn Iterator<Item = i32>> {
     if flag {
-        Box::new(0..10) as Box<dyn Iterator<Item = i32>> // Returns an iterator over the range 0 to 10
+        Box::new(0..10) as Box<dyn Iterator<Item = i32>>
     } else {
-        Box::new(vec![1, 2, 3].into_iter()) as Box<dyn Iterator<Item = i32>> // Returns an iterator over a vector
+        Box::new(vec![1, 2, 3].into_iter()) as Box<dyn Iterator<Item = i32>>
+    }
+}
+
+// Example with Read trait  
+fn conditional_reader(use_file: bool) -> Box<dyn std::io::Read> {
+    if use_file {
+        Box::new(std::fs::File::open("data.txt").unwrap()) as Box<dyn std::io::Read>
+    } else {
+        Box::new(std::io::Cursor::new(b"hello world")) as Box<dyn std::io::Read>
     }
 }
 ```
-In this code, depending on the value of flag, the function returns either an iterator over a range `(0..10)` or an iterator over a vector (`vec![1, 2, 3]`). Both iterators yield `i32` elements, but their types are different (`std::ops::Range<i32>` and `std::vec::IntoIter<i32>` respectively). Using `Box<dyn Iterator<Item = i32>>` allows us to return them from the same function, but it introduces the aforementioned drawbacks.
+
+In these examples, the functions need to return different concrete types that implement the same trait (`Iterator` or `Read`). Using `Box<dyn Trait>` allows us to return them from the same function, but it introduces the aforementioned drawbacks.
 
 
-This crate addresses the aforementioned issues by generating a single anonymous sum type for contexts decorated with the `#[sumtype]` attribute. By using the macro `sumtype!([expr])`, you can wrap the given expression in this sum type. Since the wrapped types become the same type within the same `#[sumtype]` context, it enables scenarios like returning different Iterators from a single function. Internally, this sum type uses a simple enum, which means it does not consume additional heap memory. Furthermore, it provides zero-cost abstraction. For instance, in the previous example, if the `flag` can be determined statically by the compiler, the returned iterator can also be determined, potentially eliminating any additional abstraction cost introduced by the sum type.
+This crate addresses these issues by generating a single anonymous sum type for contexts decorated with the `#[sumtype]` attribute. By using the `sumtype!([expr])` macro, you can wrap the given expression in this sum type. Since the wrapped types become the same type within the same `#[sumtype]` context, it enables scenarios like returning different types that implement the same trait from a single function. Internally, this sum type uses a simple enum, which means it does not consume additional heap memory. Furthermore, it provides zero-cost abstraction. For instance, in the previous examples, if the conditions can be determined statically by the compiler, the returned types can also be determined, potentially eliminating any additional abstraction cost introduced by the sum type.
 
-Here's how it might look:
+Here's how it looks with `sumtype`:
 
-```
+```rust
 use sumtype::sumtype;
+
+// Iterator example
 #[sumtype(sumtype::traits::Iterator)]
 fn conditional_iterator(flag: bool) -> impl Iterator<Item = i32> {
     if flag {
-        sumtype!((0..10)) // Wraps the range iterator
+        sumtype!(0..10) // Wraps the range iterator
     } else {
         sumtype!(vec![1, 2, 3].into_iter()) // Wraps the vector iterator
     }
 }
+
+// Read example
+#[sumtype(sumtype::traits::Read)]
+fn conditional_reader(use_cursor: bool) -> impl std::io::Read {
+    if use_cursor {
+        sumtype!(std::io::Cursor::new(b"hello world"))
+    } else {
+        sumtype!(std::io::Cursor::new(vec![1, 2, 3, 4, 5]))
+    }
+}
 ```
 
-In this example, the `#[sumtype]` attribute generates a sum type that can wrap both iterator types. The `sumtype!` macro is used to wrap the expressions, allowing them to be treated as the same type within the function. Because the sum type uses a simple enum internally, it avoids additional heap allocations. If the `flag` is known at compile time, the compiler can optimize the returned iterator without incurring extra abstraction costs.
+In these examples, the `#[sumtype]` attribute generates a sum type that can wrap different concrete types implementing the specified trait. The `sumtype!` macro is used to wrap the expressions, allowing them to be treated as the same type within the function. Because the sum type uses a simple enum internally, it avoids additional heap allocations. If the conditions are known at compile time, the compiler can optimize the returned types without incurring extra abstraction costs.
 
-Additionally, sumtype can be used not only in functions but also in other contexts. For example, by using `#[sumtype]` in an expression block within a mathematical formula, you can initialize different types of Iterators based on certain conditions and assign them to a specific variable.
+## Zero-Cost Abstraction vs `Box<dyn Trait>`
+
+One of the key advantages of `sumtype` is its **zero-cost abstraction** when compared to `Box<dyn Trait>`. 
+
+**Benefits of `sumtype`:**
+1. **No heap allocation** - Uses stack-allocated enum variants
+2. **Static dispatch** - Direct method calls, no vtable lookup
+3. **Compile-time optimization** - When conditions are known statically, the compiler can eliminate the enum entirely
+4. **Zero runtime cost** - In the best case, compiles down to the concrete type with no abstraction overhead
+
+When conditions are statically known at compile time, the `sumtype` version can be orders of magnitude faster because it compiles down to direct usage of the concrete type with zero abstraction overhead.
+
+Additionally, sumtype can be used not only in functions but also in other contexts. For example, by using `#[sumtype]` in an expression block, you can initialize different types that implement the same trait based on certain conditions and assign them to a specific variable.
 
 Here's an example to illustrate this:
 
@@ -63,7 +98,7 @@ for value in iter {
 }
 ```
 
-In this example, the `#[sumtype]` attribute is applied to an expression block, allowing different types of iterators to be initialized based on the condition. These are then wrapped using the sumtype! macro and assigned to the iter variable, making it possible to work with them uniformly throughout the code. Unfortunately, this feature requires nightly Rust and `#![feature(proc_macro_hygiene)]`, see [Tracking issue for procedural macros and "hygiene 2.0"](https://github.com/rust-lang/rust/issues/54727).
+In this example, the `#[sumtype]` attribute is applied to an expression block, allowing different types that implement the same trait to be initialized based on the condition. These are then wrapped using the `sumtype!` macro and assigned to the `iter` variable, making it possible to work with them uniformly throughout the code. Unfortunately, this feature requires nightly Rust and `#![feature(proc_macro_hygiene)]`, see [Tracking issue for procedural macros and "hygiene 2.0"](https://github.com/rust-lang/rust/issues/54727).
 
 Additionally, `#[sumtype]` can be used when defining traits as well as when implementing them. Here are examples for each case:
 
@@ -85,7 +120,7 @@ trait MyTrait {
 
 In this example, `#[sumtype]` is applied to a trait definition. This could be useful for scenarios where you want to create sum types that can represent different implementations of a trait.
 
-Using `#[sumtype]` with a struct definition:
+Using `#[sumtype]` with a trait implementation:
 
 ```
 # use sumtype::sumtype;
@@ -109,9 +144,9 @@ impl MyTrait for StructA {
 }
 ```
 
-Here, MyStruct contains a field that holds an iterator. Depending on a condition, it wraps different iterators using `sumtype!`.
+Here, `StructA` implements `MyTrait` and uses `sumtype!` to wrap a range iterator.
 
-Using `#[sumtype]` with an module definition:
+Using `#[sumtype]` with a module definition:
 
 ```ignore
 # use sumtype::sumtype;
@@ -140,16 +175,87 @@ mod my_module {
 }
 ```
 
-# `Read` example
+## Supported Traits
 
-```
-# use sumtype::sumtype;
+The `sumtype` crate provides built-in support for several common traits:
+
+- **[`sumtype::traits::Iterator`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Iterator.html)** - For types implementing [`std::iter::Iterator`](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
+- **[`sumtype::traits::Read`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Read.html)** - For types implementing [`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html)  
+- **[`sumtype::traits::Clone`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Clone.html)** - For types implementing [`std::clone::Clone`](https://doc.rust-lang.org/std/clone/trait.Clone.html)
+- **[`sumtype::traits::Copy`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Copy.html)** - For types implementing [`std::marker::Copy`](https://doc.rust-lang.org/std/marker/trait.Copy.html)
+
+### More Examples
+
+#### Working with different Read implementations
+
+```rust
+use sumtype::sumtype;
+
 #[sumtype(sumtype::traits::Read)]
-fn get_read(a: usize) -> impl std::io::Read {
-    if a == 1 {
-        sumtype!(std::io::Cursor::new([0]))
-    } else {
-        sumtype!(std::io::Cursor::new(vec![0; a]))
+fn get_reader(source: &str) -> impl std::io::Read {
+    match source {
+        "memory" => sumtype!(std::io::Cursor::new(b"Hello from memory")),
+        "empty" => sumtype!(std::io::empty()),
+        _ => sumtype!(std::io::Cursor::new(vec![0u8; 1024])),
     }
 }
 ```
+
+#### Working with cloneable types
+
+```rust
+use sumtype::sumtype;
+
+#[sumtype(sumtype::traits::Clone)]
+fn get_cloneable(use_string: bool) -> impl Clone {
+    if use_string {
+        sumtype!(String::from("Hello"))
+    } else {
+        sumtype!(vec![1, 2, 3])
+    }
+}
+```
+
+## Custom Traits
+
+You can also define your own traits to work with `sumtype` using the [`#[sumtrait]`](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) attribute. This allows you to extend sumtype support to any trait that meets the sumtrait-safety requirements.
+
+```rust
+use sumtype::{sumtype, sumtrait};
+
+// Define a marker type (required for sumtrait)
+pub struct MyTraitMarker(std::convert::Infallible);
+
+// Define your custom trait
+#[sumtrait(marker = MyTraitMarker)]
+pub trait MyCustomTrait {
+    fn process(&self) -> String;
+}
+
+// Implement the trait for different types
+struct TypeA;
+impl MyCustomTrait for TypeA {
+    fn process(&self) -> String {
+        "Processing with TypeA".to_string()
+    }
+}
+
+struct TypeB;
+impl MyCustomTrait for TypeB {
+    fn process(&self) -> String {
+        "Processing with TypeB".to_string()
+    }
+}
+
+// Use sumtype with your custom trait
+#[sumtype(MyCustomTrait)]
+fn get_processor(use_a: bool) -> impl MyCustomTrait {
+    if use_a {
+        sumtype!(TypeA)
+    } else {
+        sumtype!(TypeB)
+    }
+}
+```
+
+See the [`#[sumtrait]` documentation](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) for more details on sumtrait-safety requirements and advanced usage patterns for creating custom sumtype-compatible traits.

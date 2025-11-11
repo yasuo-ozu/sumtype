@@ -3,49 +3,49 @@
 #[doc(hidden)]
 pub use sumtype_macro::_sumtrait_internal;
 
-/// Make an user-defined trait usable by sumtype.
+/// Makes a user-defined trait usable by sumtype.
 ///
 /// ## Arguments
 ///
-/// - `implement` (optional) ... actual implemented trait with `#[sumtype]`. This argument
-///   is used for traits of `std` (or other 3rd-party libs) to be compatible with sumtype.
-/// - `krate` (optional) ... the path to `sumtype` crate. Default is `::sumtype`.
-/// - `marker` ... You should specify as absolute path of an empty type (defined in the same
-///   crate with the trait), which is visible from user crates (who will implement the trait
+/// - `implement` (optional) - The actual implemented trait with `#[sumtype]`. This argument
+///   is used for traits from `std` (or other 3rd-party libraries) to be compatible with sumtype.
+/// - `krate` (optional) - The path to the `sumtype` crate. Default is `::sumtype`.
+/// - `marker` - You should specify the absolute path of an empty type (defined in the same
+///   crate as the trait), which is visible from user crates (who will implement the trait
 ///   with `#[sumtype]`).
 ///
 /// ## Supertraits
 ///
 /// You can specify supertraits using `trait ... : <supertraits> { ... }` syntax. All supertraits
-/// should be also annotated by `#[sumtrait]` and specified with absolute path for practice.
+/// should also be annotated with `#[sumtrait]` and specified with absolute paths for best practice.
 ///
 /// ## Sumtrait-safe
 ///
-/// All traits annotated by `#[sumtrait]` must satisfy sumtrait-safety. This is like object safety,
+/// All traits annotated with `#[sumtrait]` must satisfy sumtrait-safety. This is similar to object safety,
 /// but slightly different.
 ///
-/// A trait is called sumtrait safe when it satisfies all of them:
+/// A trait is called sumtrait-safe when it satisfies all of the following:
 ///
-/// - The trait should not receive any generic arguments.
-/// - All supertraits of the trait are also sumtrait-safe and annotated by `#[sumtrait]`.
+/// - The trait should not accept any generic arguments.
+/// - All supertraits of the trait are also sumtrait-safe and annotated with `#[sumtrait]`.
 /// - All trait items are either associated types or associated functions.
 /// - All associated functions have zero or one input parameter including the receiver, whose
-///   type is `Self`, `&Self` or `&mut Self`. Other parameters should not contain `Self` types.
-/// - All associated functions should return `Self` type, or returns types which does not
+///   type is `Self`, `&Self`, or `&mut Self`. Other parameters should not contain `Self` types.
+/// - All associated functions should return the `Self` type, or return types that do not
 ///   contain `Self` types.
 /// ```
 /// # use sumtype::sumtrait;
 /// pub struct Marker(::core::convert::Infallible);
-/// #[sumtrait(marker = Marker)] // In practice, `Marker` must be absolute path begins with `::`
+/// #[sumtrait(marker = Marker)] // In practice, `Marker` must be an absolute path beginning with `::`
 /// trait MyTrait {}
 /// ```
 pub use sumtype_macro::sumtrait;
 
-/// Enabling `sumtype!(..)` macro in the context.
+/// Enables `sumtype!(..)` macro in the context.
 ///
-/// For each context marked by `#[sumtype]`, sumtype makes an union type of several
+/// For each context marked by `#[sumtype]`, sumtype creates a union type of several
 /// [`std::iter::Iterator`] types. To intern an expression of `Iterator` into the union type, you
-/// can use `sumtype!([expr])` syntax. This is an example of returning unified `Iterator`:
+/// can use `sumtype!([expr])` syntax. This is an example of returning a unified `Iterator`:
 ///
 /// ```
 /// # use sumtype::sumtype;
@@ -60,13 +60,13 @@ pub use sumtype_macro::sumtrait;
 /// }
 /// ```
 ///
-/// This function returns [`std::iter::Once`] or [`std::vec::IntoIter`] depends on `a` value. The
-/// `#[sumtype]` system make annonymous union type that is also [`std::iter::Iterator`], and wrap
-/// each `sumtype!(..)` expression with the union type. The mechanism is zerocost when `a` is fixed
-/// in the compile process.
+/// This function returns [`std::iter::Once`] or [`std::vec::IntoIter`] depending on the `a` value. The
+/// `#[sumtype]` system creates an anonymous union type that is also [`std::iter::Iterator`], and wraps
+/// each `sumtype!(..)` expression with the union type. The mechanism is zero-cost when `a` is fixed
+/// at compile time.
 ///
-/// You can place exact (non-annonymous) type using `sumtype!()` macro in type context. In this
-/// way, you should specify type using `sumtype!([expr], [type])` format like:
+/// You can specify the exact (non-anonymous) type using `sumtype!()` macro in type context. In this
+/// case, you should specify the type using `sumtype!([expr], [type])` format like:
 ///
 /// ```
 /// # use sumtype::sumtype;
@@ -87,8 +87,8 @@ pub trait TypeRef<const RANDOM: usize, const N: usize> {
     type Type: ?Sized;
 }
 
-/// Supplies mock traits which are targetted by `#[sumtype]` macros. This is to make
-/// traits in other crates be compatible with `#[sumtype]`.
+/// Provides mock traits which are targeted by `#[sumtype]` macros. This is to make
+/// traits from other crates compatible with `#[sumtype]`.
 pub mod traits {
     use super::sumtrait;
 
