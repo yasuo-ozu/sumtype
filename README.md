@@ -185,6 +185,7 @@ The `sumtype` crate provides built-in support for several common traits:
 - **[`sumtype::traits::Copy`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Copy.html)** - For types implementing [`std::marker::Copy`](https://doc.rust-lang.org/std/marker/trait.Copy.html)
 - **[`sumtype::traits::Debug`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Debug.html)** - For types implementing [`std::fmt::Debug`](https://doc.rust-lang.org/std/fmt/trait.Debug.html)
 - **[`sumtype::traits::Display`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Display.html)** - For types implementing [`std::fmt::Display`](https://doc.rust-lang.org/std/fmt/trait.Display.html)
+- **[`sumtype::traits::Error`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Error.html)** - For types implementing [`std::error::Error`](https://doc.rust-lang.org/std/error/trait.Error.html)
 
 ### More Examples
 
@@ -247,6 +248,57 @@ println!("Debug: {:?}", debug_item); // "Debug: 42"
 
 let display_item = get_displayable(false);
 println!("Display: {}", display_item); // "Display: Static string"
+```
+
+#### Working with Error types
+
+```rust
+use sumtype::sumtype;
+use std::fmt;
+
+// Define custom error types
+#[derive(Debug)]
+struct IoError(String);
+
+impl fmt::Display for IoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "IO Error: {}", self.0)
+    }
+}
+
+impl std::error::Error for IoError {}
+
+#[derive(Debug)]
+struct ParseError(String);
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Parse Error: {}", self.0)
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+#[sumtype(sumtype::traits::Error)]
+fn get_error(is_io_error: bool) -> impl std::error::Error {
+    if is_io_error {
+        sumtype!(IoError("Failed to read file".to_string()))
+    } else {
+        sumtype!(ParseError("Invalid format".to_string()))
+    }
+}
+
+// Usage
+let error = get_error(true);
+println!("Error: {}", error); // "Error: IO Error: Failed to read file"
+println!("Debug: {:?}", error); // Prints debug representation
+
+// Can be used where std::error::Error is expected
+fn handle_error(e: impl std::error::Error) {
+    println!("Handling error: {}", e);
+}
+
+handle_error(get_error(false));
 ```
 
 

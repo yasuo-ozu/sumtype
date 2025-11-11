@@ -176,6 +176,19 @@ pub mod traits {
                 }
             }
 
+            /// Target of [`sumtype::sumtype`] macro, which implements [`std::error::Error`].
+            #[sumtrait(implement = ::std::error::Error, krate = $crate, marker = $crate::traits::Marker)]
+            #[allow(private_bounds)]
+            pub trait Error: $crate::traits::Debug + $crate::traits::Display {
+                fn source(&self) -> ::core::option::Option<&(dyn ::std::error::Error + 'static)>;
+            }
+
+            impl<T: ::std::error::Error> Error for T {
+                fn source(&self) -> ::core::option::Option<&(dyn ::std::error::Error + 'static)> {
+                    T::source(self)
+                }
+            }
+
         };
     }
     emit_traits!();
