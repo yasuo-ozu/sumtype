@@ -9,144 +9,13 @@ use std::collections::{HashMap, HashSet};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
-use template_quote::{quote, ToTokens};
-use type_leak::*;
+use template_quote::quote;
 
+mod generics;
 mod sumtrait_internal;
-
-fn random() -> u64 {
-    use std::hash::{BuildHasher, Hasher};
-    std::collections::hash_map::RandomState::new()
-        .build_hasher()
-        .finish()
-}
-
-fn generic_param_to_arg(i: GenericParam) -> GenericArgument {
-    match i {
-        GenericParam::Lifetime(LifetimeParam { lifetime, .. }) => {
-            GenericArgument::Lifetime(lifetime)
-        }
-        GenericParam::Type(TypeParam { ident, .. }) => GenericArgument::Type(parse_quote!(#ident)),
-        GenericParam::Const(ConstParam { ident, .. }) => {
-            GenericArgument::Const(parse_quote!(#ident))
-        }
-    }
-}
-
-fn merge_generic_params(
-    args1: impl IntoIterator<Item = GenericParam, IntoIter: Clone>,
-    args2: impl IntoIterator<Item = GenericParam, IntoIter: Clone>,
-) -> impl Iterator<Item = GenericParam> {
-    let it1 = args1.into_iter();
-    let it2 = args2.into_iter();
-    it1.clone()
-        .filter(|arg| matches!(arg, GenericParam::Lifetime(_)))
-        .chain(
-            it2.clone()
-                .filter(|arg| matches!(arg, GenericParam::Lifetime(_))),
-        )
-        .chain(
-            it1.clone()
-                .filter(|arg| matches!(arg, GenericParam::Const(_))),
-        )
-        .chain(
-            it2.clone()
-                .filter(|arg| matches!(arg, GenericParam::Const(_))),
-        )
-        .chain(
-            it1.clone()
-                .filter(|arg| matches!(arg, GenericParam::Type(_))),
-        )
-        .chain(
-            it2.clone()
-                .filter(|arg| matches!(arg, GenericParam::Type(_))),
-        )
-}
-
-fn merge_generic_args(
-    args1: impl IntoIterator<Item = GenericArgument, IntoIter: Clone>,
-    args2: impl IntoIterator<Item = GenericArgument, IntoIter: Clone>,
-) -> impl Iterator<Item = GenericArgument> {
-    let it1 = args1.into_iter();
-    let it2 = args2.into_iter();
-    it1.clone()
-        .filter(|arg| matches!(arg, GenericArgument::Lifetime(_)))
-        .chain(
-            it2.clone()
-                .filter(|arg| matches!(arg, GenericArgument::Lifetime(_))),
-        )
-        .chain(
-            it1.clone()
-                .filter(|arg| matches!(arg, GenericArgument::Const(_))),
-        )
-        .chain(
-            it2.clone()
-                .filter(|arg| matches!(arg, GenericArgument::Const(_))),
-        )
-        .chain(
-            it1.clone()
-                .filter(|arg| matches!(arg, GenericArgument::Type(_))),
-        )
-        .chain(
-            it2.clone()
-                .filter(|arg| matches!(arg, GenericArgument::Type(_))),
-        )
-        .chain(it1.filter(|arg| {
-            matches!(
-                arg,
-                GenericArgument::AssocType(_)
-                    | GenericArgument::AssocConst(_)
-                    | GenericArgument::Constraint(_)
-            )
-        }))
-        .chain(it2.filter(|arg| {
-            matches!(
-                arg,
-                GenericArgument::AssocType(_)
-                    | GenericArgument::AssocConst(_)
-                    | GenericArgument::Constraint(_)
-            )
-        }))
-}
-
-fn path_of_ident(ident: Ident, is_super: bool) -> Path {
-    let mut segments = vec![];
-    if is_super {
-        segments.push(PathSegment {
-            ident: Ident::new("super", Span::call_site()),
-            arguments: PathArguments::None,
-        });
-    }
-    segments.push(PathSegment {
-        ident,
-        arguments: PathArguments::None,
-    });
-    Path {
-        leading_colon: None,
-        segments: segments.into_iter().collect(),
-    }
-}
-
-fn split_for_impl(
-    generics: Option<&Generics>,
-) -> (Vec<GenericParam>, Vec<GenericArgument>, Vec<WherePredicate>) {
-    if let Some(generics) = generics {
-        let (_, ty_generics, where_clause) = generics.split_for_impl();
-        let ty_generics: std::result::Result<AngleBracketedGenericArguments, _> =
-            parse2(ty_generics.into_token_stream());
-        (
-            generics.params.iter().cloned().collect(),
-            ty_generics
-                .map(|g| g.args.into_iter().collect())
-                .unwrap_or(vec![]),
-            where_clause
-                .map(|w| w.predicates.iter().cloned().collect())
-                .unwrap_or(vec![]),
-        )
-    } else {
-        (vec![], vec![], vec![])
-    }
-}
+mod supertrait;
+use generics::*;
+use supertrait::sumtrait_impl;
 
 #[derive(Parse)]
 struct Arguments {
@@ -154,38 +23,31 @@ struct Arguments {
     bounds: Punctuated<Path, Token![+]>,
 }
 
-enum SumTypeImpl {
-    Trait(Path),
-}
-
-impl SumTypeImpl {
-    #[allow(clippy::too_many_arguments)]
-    fn gen(
-        &self,
-        enum_path: &Path,
-        unspecified_ty_params: &[Ident],
-        variants: &[(Ident, Type)],
-        impl_generics: Vec<GenericParam>,
-        ty_generics: Vec<GenericArgument>,
-        where_clause: Vec<WherePredicate>,
-        constraint_expr_trait_ident: &Ident,
-    ) -> TokenStream {
-        match self {
-            SumTypeImpl::Trait(trait_path) => {
-                quote! {
-                    #trait_path!(
-                        /* constraint_expr_trait_ident = */ #constraint_expr_trait_ident,
-                        /* trait_path = */ #trait_path,
-                        /* enum_path = */ #enum_path,
-                        /* unspecified_ty_params = */ [#(#unspecified_ty_params),*],
-                        /* variants = */ [#(for (id, ty) in variants),{#id:#ty}],
-                        /* impl_generics_base = */ [ #(#impl_generics),* ],
-                        /* ty_generics_base = */ [#(#ty_generics),*],
-                        /* where_clause_base = */ { #(#where_clause),* },
-                    );
-                }
-            }
-        }
+/// Emit the invocation of a target trait's dispatch `macro_rules!` (generated by `#[sumtrait]`),
+/// which expands to the `impl <trait> for <enum>` block. One call per `#[sumtype(A + B + ..)]`
+/// bound.
+#[allow(clippy::too_many_arguments)]
+fn gen_trait_impl(
+    trait_path: &Path,
+    enum_path: &Path,
+    unspecified_ty_params: &[Ident],
+    variants: &[(Ident, Type)],
+    impl_generics: &[GenericParam],
+    ty_generics: &[GenericArgument],
+    where_clause: &[WherePredicate],
+    constraint_expr_trait_ident: &Ident,
+) -> TokenStream {
+    quote! {
+        #trait_path!(
+            /* constraint_expr_trait_ident = */ #constraint_expr_trait_ident,
+            /* trait_path = */ #trait_path,
+            /* enum_path = */ #enum_path,
+            /* unspecified_ty_params = */ [#(#unspecified_ty_params),*],
+            /* variants = */ [#(for (id, ty) in variants),{#id:#ty}],
+            /* impl_generics_base = */ [ #(#impl_generics),* ],
+            /* ty_generics_base = */ [#(#ty_generics),*],
+            /* where_clause_base = */ { #(#where_clause),* },
+        );
     }
 }
 
@@ -362,10 +224,12 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
         } else {
             let replaced_ty_generics: Vec<_> = ty_generics
                 .iter()
-                .map(|ga| match ga {
-                    GenericArgument::Lifetime(lt) => quote!(& #lt ()),
-                    GenericArgument::Const(_) => quote!(),
-                    o => quote!(#o),
+                .filter_map(|ga| match ga {
+                    GenericArgument::Lifetime(lt) => Some(quote!(& #lt ())),
+                    // Const params need no PhantomData marker; emitting one would produce the
+                    // invalid `PhantomData<>` (E0107). Regression test: `tests/fixed_bugs.rs`.
+                    GenericArgument::Const(_) => None,
+                    o => Some(quote!(#o)),
                 })
                 .collect();
             let constraint_traits = (0..args.bounds.len())
@@ -414,13 +278,14 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                     #(#where_clause,)*
                 {}
                 #(for (trait_, constraint_trait) in args.bounds.iter().zip(&constraint_traits)) {
-                    #{ SumTypeImpl::Trait(trait_.clone()).gen(
+                    #{ gen_trait_impl(
+                        trait_,
                         &path_of_ident(enum_ident.clone(), false),
                         unspecified_ty_params.as_slice(),
                         variants.as_slice(),
-                        impl_generics.clone(),
-                        ty_generics.clone(),
-                        where_clause.clone(),
+                        &impl_generics,
+                        &ty_generics,
+                        &where_clause,
                         constraint_trait,
                     ) }
                 }
@@ -755,6 +620,12 @@ const _: () = {
 };
 
 fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
+    if args.bounds.is_empty() {
+        abort!(
+            Span::call_site(),
+            "`#[sumtype]` requires at least one trait bound, e.g. `#[sumtype(sumtype::traits::Iterator)]`"
+        );
+    }
     let public = Visibility::Public(Default::default());
     if let Ok(block) = parse2::<Block>(input.clone()) {
         let (out, block) = block.emit_items(args, None, false, public);
@@ -787,108 +658,6 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
     }
 }
 
-fn process_supported_supertraits<'a>(
-    traits: impl IntoIterator<Item = &'a TypeParamBound>,
-    krate: &Path,
-) -> (Vec<Path>, Vec<Path>) {
-    let mut supertraits = Vec::new();
-    let mut derive_traits = Vec::new();
-    for tpb in traits.into_iter() {
-        if let TypeParamBound::Trait(tb) = tpb {
-            if let Some(ident) = tb.path.get_ident() {
-                match ident.to_string().as_str() {
-                    "Copy" | "Clone" | "Hash" | "Eq" => {
-                        supertraits.push(parse_quote!(#krate::traits::#ident))
-                    }
-                    "PartialEq" => derive_traits.push(parse_quote!(PartialEq)),
-                    o if o.starts_with("__SumTrait_Sealed") => (),
-                    _ => (),
-                }
-            } else {
-                supertraits.push(tb.path.clone())
-            }
-        } else {
-            abort!(tpb.span(), "Only path is supported");
-        }
-    }
-    (supertraits, derive_traits)
-}
-
-fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
-    let mut leaker = Leaker::from_trait(input)
-        .unwrap_or_else(|_| Leaker::with_generics(input.generics.clone()));
-    leaker.self_ty_can_be_interned = false;
-    leaker
-        .finish()
-        .iter()
-        .cloned()
-        .collect()
-}
-
-fn sumtrait_impl(
-    args: Option<Path>,
-    marker_path: &Path,
-    krate: &Path,
-    input: ItemTrait,
-) -> TokenStream {
-    let (supertraits, derive_traits) = process_supported_supertraits(&input.supertraits, krate);
-    for item in &input.items {
-        match item {
-            TraitItem::Const(_) => abort!(item.span(), "associated const is not supported"),
-            TraitItem::Fn(tfn) => {
-                if tfn.sig.inputs.is_empty() || !matches!(&tfn.sig.inputs[0], FnArg::Receiver(_)) {
-                    abort!(tfn.sig.span(), "requires receiver")
-                }
-            }
-            TraitItem::Type(tty) => {
-                if tty.default.is_some() {
-                    abort!(tty.span(), "associated type defaults is not supported")
-                }
-                if !tty.generics.params.is_empty() || tty.generics.where_clause.is_some() {
-                    abort!(
-                        tty.generics.span(),
-                        "generalized associated types is not supported"
-                    )
-                }
-            }
-            o => abort!(o.span(), "Not supported"),
-        }
-    }
-    let temporary_mac_name =
-        Ident::new(&format!("__sumtype_macro_{}", random()), Span::call_site());
-    let typeref_types = collect_typeref_types(&input);
-    let (_, _, where_clause) = input.generics.split_for_impl();
-    let typeref_id = random() as usize;
-    quote! {
-        #input
-        #(for (i, ty) in typeref_types.iter().enumerate()) {
-            impl<#(for p in &input.generics.params),{#p}> #krate::TypeRef<#typeref_id, #i> for #marker_path #where_clause {
-                type Type = #ty;
-            }
-        }
-
-        #[doc(hidden)]
-        #[macro_export]
-        macro_rules! #temporary_mac_name {
-            ($($t:tt)*) => {
-                #krate::_sumtrait_internal!(
-                    { $($t)* }
-                    /* typerefs= */  [#(#typeref_types),*],
-                    /* item_trait= */  {#input},
-                    /* typeref_id= */  #typeref_id,
-                    /* krate= */  #krate,
-                    /* marker_path= */ #marker_path,
-                    /* implementation= */  [#{args.map(|m| quote!(#m)).unwrap_or(quote!(_))}],
-                    /* supertraits= */ [#(#supertraits),*],
-                    /* derive_traits= */ [#(#derive_traits),*],
-                );
-            };
-        }
-        #[doc(hidden)]
-        #{&input.vis} use #temporary_mac_name as #{&input.ident};
-    }
-}
-
 #[doc(hidden)]
 #[proc_macro_error]
 #[proc_macro]
@@ -905,7 +674,15 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
         krate: Option<Path>,
         marker: Path,
     }
-    let args = SumtraitArgs::from_list(&NestedMeta::parse_meta_list(attr.into()).unwrap()).unwrap();
+    let meta = NestedMeta::parse_meta_list(attr.into())
+        .unwrap_or_else(|e| abort!(e.span(), "invalid `#[sumtrait]` attribute: {}", e));
+    let args = SumtraitArgs::from_list(&meta).unwrap_or_else(|e| {
+        abort!(
+            Span::call_site(),
+            "invalid `#[sumtrait]` arguments: {} (a `marker = <path>` argument is required)",
+            e
+        )
+    });
 
     let krate = args.krate.unwrap_or(parse_quote!(::sumtype));
     sumtrait_impl(
@@ -917,68 +694,12 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
     .into()
 }
 
-/// Enables `sumtype!(..)` macro in the context.
+/// Enables the `sumtype!(..)` macro within the annotated context (the implementation of the
+/// `#[sumtype]` attribute).
 ///
-/// For each context marked by `#[sumtype]`, sumtype creates a union type of several
-/// [`std::iter::Iterator`] types. To intern an expression of `Iterator` into the union type, you
-/// can use `sumtype!([expr])` syntax. This is an example of returning a unified `Iterator`:
-///
-/// ```
-/// # use sumtype::sumtype;
-/// # use std::iter::Iterator;
-/// #[sumtype]
-/// fn return_iter(a: bool) -> impl Iterator<Item = ()> {
-///     if a {
-///         sumtype!(std::iter::once(()))
-///     } else {
-///         sumtype!(vec![()].into_iter())
-///     }
-/// }
-/// ```
-///
-/// This function returns [`std::iter::Once`] or [`std::vec::IntoIter`] depending on the `a` value. The
-/// `#[sumtype]` system creates an anonymous union type that is also [`std::iter::Iterator`], and wraps
-/// each `sumtype!(..)` expression with the union type. The mechanism is zero-cost when `a` is fixed
-/// at compile time.
-///
-/// You can specify the exact (non-anonymous) type using `sumtype!()` macro in type context. In this
-/// case, you should specify the type using `sumtype!([expr], [type])` format like:
-///
-/// ```
-/// # use sumtype::sumtype;
-/// # use std::iter::Iterator;
-/// #[sumtype]
-/// fn return_iter_explicit(a: bool) -> sumtype!() {
-///     if a {
-///         sumtype!(std::iter::once(()), std::iter::Once<()>)
-///     } else {
-///         sumtype!(vec![()].into_iter(), std::vec::IntoIter<()>)
-///     }
-/// }
-/// ```
-///
-/// You may need to use additional generic parameters in `[ty]`. The following example
-/// demonstrates this:
-///
-/// ```
-/// # use sumtype::sumtype;
-/// # use std::iter::Iterator;
-/// struct S;
-///
-/// #[sumtype]
-/// impl S {
-///     fn f<'a, T>(t: &'a T, count: usize) -> sumtype!['a, T] {
-///         if count == 0 {
-///             sumtype!(std::iter::empty(), for<'a, T: 'a> std::iter::Empty<&'a T>)
-///         } else {
-///             sumtype!(
-///                 std::iter::repeat(t).take(count),
-///                 for<'a, T: 'a> std::iter::Take<std::iter::Repeat<&'a T>>
-///             )
-///         }
-///     }
-/// }
-/// ```
+/// This is an internal proc-macro crate. End users should depend on the
+/// [`sumtype`](https://docs.rs/sumtype) crate and use `#[sumtype(<trait paths>)]` from there;
+/// see that crate's documentation for usage, runnable examples, and the list of supported traits.
 #[proc_macro_error]
 #[proc_macro_attribute]
 pub fn sumtype(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {

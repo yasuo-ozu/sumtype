@@ -26,7 +26,9 @@ impl ToTokens for IdentAndType {
 struct SumtraitInternalContextInner {
     constraint_expr_trait_ident: Ident,
     _comma_61: Token![,],
-    trait_path: Path,
+    // Parsed for layout but unused: a user `#[sumtrait]` implements its own trait via
+    // `item_trait.ident`, and a built-in uses its `implement = …` path.
+    _trait_path: Path,
     _comma_0: Token![,],
     enum_path: Path,
     _comma_1: Token![,],
@@ -95,13 +97,6 @@ struct SumtraitInternalContent {
     #[parse(Punctuated::parse_terminated)]
     supertraits: Punctuated<Path, Token![,]>,
     _comma_13: Token![,],
-    #[syn(bracketed)]
-    _bracket_token7: syn::token::Bracket,
-    #[syn(in = _bracket_token7)]
-    #[parse(Punctuated::parse_terminated)]
-    #[allow(unused)]
-    derive_traits: Punctuated<Ident, Token![,]>,
-    _comma_14: Token![,],
 }
 
 fn has_self_ty(ty: &Type) -> Option<Span> {
@@ -209,6 +204,21 @@ fn process_fn(
     let self_arg_ident = Ident::new("__sumtrait_self_arg", Span::call_site());
     let (args, recv, return_is_self) = generate_fn_args(&item_fn.sig, &self_arg_ident);
     let (fn_impl_generics, _, fn_where_clause) = item_fn.sig.generics.split_for_impl();
+    // Forward the method's own type/const generics to the dispatched call as a turbofish, so a
+    // generic that is only supplied via turbofish (e.g. a const param, or a type param used only
+    // internally) and is not inferable from the arguments/return type still resolves. Lifetimes
+    // are omitted (they cannot be turbofished and are inferred).
+    let method_turbofish: Vec<Ident> = item_fn
+        .sig
+        .generics
+        .params
+        .iter()
+        .filter_map(|p| match p {
+            GenericParam::Type(t) => Some(t.ident.clone()),
+            GenericParam::Const(c) => Some(c.ident.clone()),
+            GenericParam::Lifetime(_) => None,
+        })
+        .collect();
     quote! {
         #{&item_fn.sig.constness} #{&item_fn.sig.asyncness} #{&item_fn.sig.unsafety}
         #{&item_fn.sig.abi} fn #{&item_fn.sig.ident} #fn_impl_generics (
@@ -240,13 +250,21 @@ fn process_fn(
                             #(if return_is_self) {
                                 #enum_path::#ident(<#ty as #implementation<
                                      #(#iter_ty_generics),*
-                                     >>::#{&item_fn.sig.ident}(
+                                     >>::#{&item_fn.sig.ident}
+                                     #(if !method_turbofish.is_empty()) {
+                                         ::<#(#method_turbofish),*>
+                                     }
+                                     (
                                          #(for (_, arg) in &args), { #arg }
                                 )),
                             } #(else) {
                                 <#ty as #implementation<
                                      #(#iter_ty_generics),*
-                                 >>::#{&item_fn.sig.ident}(
+                                 >>::#{&item_fn.sig.ident}
+                                 #(if !method_turbofish.is_empty()) {
+                                     ::<#(#method_turbofish),*>
+                                 }
+                                 (
                                      #(for (_, arg) in &args), { #arg }
                                 ),
                             }
@@ -260,18 +278,17 @@ fn process_fn(
 }
 
 fn sort_impl_generics(a: &mut [&GenericParam]) {
-    a.sort_by(|lhs, rhs| {
-        use std::cmp::Ordering;
-        if lhs == rhs {
-            Ordering::Equal
-        } else {
-            match (lhs, rhs) {
-                (GenericParam::Lifetime(_), _)
-                | (GenericParam::Const(_), GenericParam::Type(_)) => Ordering::Less,
-                _ => Ordering::Greater,
-            }
+    // Group as lifetimes < consts < types. A rank-based key gives a proper total order; the
+    // previous comparator returned `Less` for both `cmp(a, b)` and `cmp(b, a)` on two distinct
+    // lifetimes, violating the strict-weak-ordering contract of `sort_by` (which can panic).
+    fn rank(p: &GenericParam) -> u8 {
+        match p {
+            GenericParam::Lifetime(_) => 0,
+            GenericParam::Const(_) => 1,
+            GenericParam::Type(_) => 2,
         }
-    });
+    }
+    a.sort_by_key(|p| rank(p));
 }
 
 fn arr_to_ts<I: IntoIterator>(a: I) -> impl Iterator<Item = TokenStream>
@@ -285,7 +302,6 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
     let SumtraitInternalContent {
         inner:
             SumtraitInternalContextInner {
-                trait_path,
                 enum_path,
                 unspecified_ty_params,
                 variants,
@@ -302,7 +318,6 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
         marker_path,
         implementation,
         supertraits,
-        derive_traits: _,
         ..
     } = parse2(input.clone())
         .unwrap_or_else(|e| abort!(Span::call_site(), format!("Bad content: {}", e)));
@@ -323,7 +338,12 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
     let implementation = if let Type::Path(TypePath { path, .. }) = implementation {
         path
     } else {
-        trait_path.clone()
+        // No `implement = ...`: this is a user `#[sumtrait]`, so implement the trait itself. Use
+        // the trait's OWN ident rather than the passed-in `trait_path` — for a supertrait
+        // recursion the latter is the *parent* trait, which would generate `impl <Parent> for Enum`
+        // containing the child's methods (E0407). The trait must be in scope (by its bare name) at
+        // the `#[sumtype]` expansion site.
+        Path::from(item_trait.ident.clone())
     };
     let mut impl_generics_merged = item_trait
         .generics

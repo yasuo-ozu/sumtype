@@ -1,5 +1,13 @@
 #![doc = include_str!("README.md")]
 
+// Audit: cases that must fail to compile (intentional rejections + known limitations) are
+// reproduced as `compile_fail` doctests in `tests/compile_fail.md`. Gated on `cfg(doctest)` so
+// this neither appears in `cargo doc` output nor affects normal builds; it runs under
+// `cargo test` (Doc-tests sumtype).
+#[cfg(doctest)]
+#[doc = include_str!("tests/compile_fail.md")]
+struct CompileFailCases;
+
 #[doc(hidden)]
 pub use sumtype_macro::_sumtrait_internal;
 
@@ -29,10 +37,10 @@ pub use sumtype_macro::_sumtrait_internal;
 /// - The trait should not accept any generic arguments.
 /// - All supertraits of the trait are also sumtrait-safe and annotated with `#[sumtrait]`.
 /// - All trait items are either associated types or associated functions.
-/// - All associated functions have zero or one input parameter including the receiver, whose
-///   type is `Self`, `&Self`, or `&mut Self`. Other parameters should not contain `Self` types.
-/// - All associated functions should return the `Self` type, or return types that do not
-///   contain `Self` types.
+/// - All associated functions must take a receiver (`self`, `&self`, or `&mut self`) as their
+///   first parameter. Additional parameters are allowed, but their types must not contain `Self`.
+/// - All associated functions should return the `Self` type, or a return type that does not
+///   contain `Self`.
 /// ```
 /// # use sumtype::sumtrait;
 /// pub struct Marker(::core::convert::Infallible);
@@ -101,7 +109,7 @@ pub mod traits {
             #[doc(hidden)]
             pub struct Marker(::core::convert::Infallible);
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::io::Read`].
+            /// Target of [`crate::sumtype`] macro, which implements [`std::io::Read`].
             #[sumtrait(implement = ::std::io::Read, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Read {
@@ -114,7 +122,7 @@ pub mod traits {
                 }
             }
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::iter::Iterator`].
+            /// Target of [`crate::sumtype`] macro, which implements [`std::iter::Iterator`].
             #[sumtrait(implement = ::core::iter::Iterator, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Iterator {
@@ -129,7 +137,7 @@ pub mod traits {
                 }
             }
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::marker::Copy`].
+            /// Target of [`crate::sumtype`] macro, which implements [`std::marker::Copy`].
             #[sumtrait(implement = ::core::marker::Copy, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Copy: $crate::traits::Clone {
@@ -137,7 +145,7 @@ pub mod traits {
 
             impl<T: ::core::marker::Copy> Copy for T {}
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::marker::Clone`].
+            /// Target of [`crate::sumtype`] macro, which implements [`std::clone::Clone`].
             #[sumtrait(implement = ::core::clone::Clone, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Clone {
@@ -150,7 +158,24 @@ pub mod traits {
                 }
             }
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::fmt::Display`].
+            /// Target of [`crate::sumtype`] macro, which implements [`std::hash::Hash`].
+            ///
+            /// The generated sum type forwards `hash` to the active variant (no discriminant is
+            /// mixed in). The enum does not implement `Eq`/`PartialEq`, so there is no equality
+            /// relation for the hash to be inconsistent with.
+            #[sumtrait(implement = ::core::hash::Hash, krate = $crate, marker = $crate::traits::Marker)]
+            #[allow(private_bounds)]
+            pub trait Hash {
+                fn hash<H: ::core::hash::Hasher>(&self, state: &mut H);
+            }
+
+            impl<T: ::core::hash::Hash> Hash for T {
+                fn hash<H: ::core::hash::Hasher>(&self, state: &mut H) {
+                    T::hash(self, state)
+                }
+            }
+
+            /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Display`].
             #[sumtrait(implement = ::core::fmt::Display, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Display {
@@ -163,7 +188,7 @@ pub mod traits {
                 }
             }
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::fmt::Debug`].
+            /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Debug`].
             #[sumtrait(implement = ::core::fmt::Debug, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Debug {
@@ -176,7 +201,7 @@ pub mod traits {
                 }
             }
 
-            /// Target of [`sumtype::sumtype`] macro, which implements [`std::error::Error`].
+            /// Target of [`crate::sumtype`] macro, which implements [`std::error::Error`].
             #[sumtrait(implement = ::std::error::Error, krate = $crate, marker = $crate::traits::Marker)]
             #[allow(private_bounds)]
             pub trait Error: $crate::traits::Debug + $crate::traits::Display {

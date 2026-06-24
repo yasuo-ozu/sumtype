@@ -1,3 +1,6 @@
+// `repeat().take()` is used deliberately here to produce the exact `Take<Repeat<_>>` type named
+// by the explicit-type `sumtype!(.., Type)` examples below.
+#![allow(clippy::manual_repeat_n)]
 use sumtype::sumtype;
 
 #[sumtype(sumtype::traits::Iterator)]

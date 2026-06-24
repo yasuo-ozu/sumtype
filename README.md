@@ -120,7 +120,7 @@ trait MyTrait {
 
 In this example, `#[sumtype]` is applied to a trait definition. This could be useful for scenarios where you want to create sum types that can represent different implementations of a trait.
 
-Using `#[sumtype]` with a trait implementation:
+Using `#[sumtype]` on a trait and on an implementation of it for a concrete type:
 
 ```
 # use sumtype::sumtype;
@@ -183,6 +183,7 @@ The `sumtype` crate provides built-in support for several common traits:
 - **[`sumtype::traits::Read`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Read.html)** - For types implementing [`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html)  
 - **[`sumtype::traits::Clone`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Clone.html)** - For types implementing [`std::clone::Clone`](https://doc.rust-lang.org/std/clone/trait.Clone.html)
 - **[`sumtype::traits::Copy`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Copy.html)** - For types implementing [`std::marker::Copy`](https://doc.rust-lang.org/std/marker/trait.Copy.html)
+- **[`sumtype::traits::Hash`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Hash.html)** - For types implementing [`std::hash::Hash`](https://doc.rust-lang.org/std/hash/trait.Hash.html)
 - **[`sumtype::traits::Debug`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Debug.html)** - For types implementing [`std::fmt::Debug`](https://doc.rust-lang.org/std/fmt/trait.Debug.html)
 - **[`sumtype::traits::Display`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Display.html)** - For types implementing [`std::fmt::Display`](https://doc.rust-lang.org/std/fmt/trait.Display.html)
 - **[`sumtype::traits::Error`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Error.html)** - For types implementing [`std::error::Error`](https://doc.rust-lang.org/std/error/trait.Error.html)

@@ -10,15 +10,28 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  msrv:
+    name: MSRV (1.56.0)
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@1.56.0
+    # Only `cargo check` at the MSRV: it verifies the library targets compile on 1.56 without
+    # building the test suite (the tests use newer-than-1.56 syntax, which is dev-only).
+    - name: cargo check
+      run: cargo check --workspace --verbose
+
+  test:
+    name: Build, test, clippy (stable)
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
     - name: Build
       run: cargo build --verbose
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test --workspace --verbose
     - name: Run clippy
-      run: RUSTFLAGS="-Dwarnings" cargo clippy --no-deps
+      run: RUSTFLAGS="-Dwarnings" cargo clippy --workspace --all-targets --no-deps

@@ -1,3 +1,4 @@
+#![allow(clippy::manual_repeat_n)]
 use sumtype::sumtype;
 
 #[allow(unused)]

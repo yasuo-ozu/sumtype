@@ -1,3 +1,5 @@
+// `repeat().take()` matches the explicit `Take<Repeat<_>>` types named in the `sumtype!` calls.
+#![allow(clippy::manual_repeat_n)]
 use sumtype::sumtype;
 
 #[allow(unused)]
