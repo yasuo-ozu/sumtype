@@ -96,6 +96,45 @@ pub trait TypeRef<const RANDOM: usize, const N: usize> {
     type Type: ?Sized;
 }
 
+/// Recovers a concrete type `To` from a `#[sumtype]` sum type.
+///
+/// An implementation is generated automatically for every sum type produced by `#[sumtype]`.
+/// Because it inspects the active variant's type at runtime (via [`core::any::TypeId`]), both `To`
+/// and every wrapped type must be `'static`; the methods are unavailable for sum types that wrap a
+/// borrowed type. `downcast_ref`/`downcast_mut` are allocation-free; the owning `downcast` boxes the
+/// value briefly to move it out.
+///
+/// To call `Downcast` on a function's result, name the target type(s) in the return bound:
+/// `-> impl Trait + Downcast<To>` (add one `+ Downcast<T>` per type you want to recover). This works
+/// with the ordinary type-less `sumtype!(expr)` form. A bare `impl Trait` return exposes only
+/// `Trait`, so `Downcast` would not be reachable through it. (Exposing the **named** sum type — a
+/// `-> sumtype!()` return or a field — also works and makes every `To` available at once.)
+///
+/// `To` is the trait's type parameter, so it is chosen by context (a type annotation or a
+/// `Downcast::<To>::…` qualified call), not by a method turbofish — which is what lets `Downcast<To>`
+/// serve as a generic bound, e.g. `fn f<E: Downcast<u32>>(e: E) -> Option<u32> { e.downcast().ok() }`.
+///
+/// ```
+/// # use sumtype::{sumtype, Downcast};
+/// #[sumtype(sumtype::traits::Debug)]
+/// fn make(b: bool) -> impl std::fmt::Debug + Downcast<u32> + Downcast<String> {
+///     if b { sumtype!(1u32) } else { sumtype!(String::from("hi")) }
+/// }
+/// let v = make(true);
+/// assert_eq!(Downcast::<u32>::downcast_ref(&v), Some(&1u32));
+/// assert_eq!(Downcast::<String>::downcast_ref(&v), None);
+/// assert_eq!(Downcast::<String>::downcast(make(false)).ok(), Some(String::from("hi")));
+/// ```
+pub trait Downcast<To: 'static>: Sized {
+    /// Returns the wrapped value if the active variant holds a `To`; otherwise returns `self`
+    /// unchanged.
+    fn downcast(self) -> Result<To, Self>;
+    /// Returns a shared reference to the wrapped value if the active variant holds a `To`.
+    fn downcast_ref(&self) -> Option<&To>;
+    /// Returns a mutable reference to the wrapped value if the active variant holds a `To`.
+    fn downcast_mut(&mut self) -> Option<&mut To>;
+}
+
 /// Mock traits targeted by the `#[sumtype]` macro. They make the corresponding `std`/`core` traits
 /// usable with `#[sumtype]`.
 pub mod traits {

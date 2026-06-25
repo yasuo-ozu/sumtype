@@ -83,12 +83,43 @@ When the branch is known at compile time, the `sumtype` version can be far faste
 | ---------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
 | Set of types                 | closed — known per `#[sumtype]` context    | open — any `'static` type                                   |
 | Calling the shared trait     | direct; the sum type implements it         | not possible — you must `downcast` to a concrete type first |
-| Recovering the concrete type | not the goal                               | `downcast`, which can fail at runtime                       |
+| Recovering the concrete type | secondary — via [`Downcast`](#recovering-a-concrete-type) when `'static` | `downcast`, which can fail at runtime |
 | Allocation                   | none (stack-allocated enum)                | usually `Box` (heap)                                        |
 | Dispatch                     | static, and often optimized away entirely  | runtime `TypeId` comparison                                 |
-| `'static` requirement        | none — works with borrows and lifetimes    | required (`Any: 'static`)                                   |
+| `'static` requirement        | only for `Downcast`; not for the core type | required (`Any: 'static`)                                   |
 
 In short, reach for `dyn Any` when you genuinely need runtime reflection — to stash values of an unknown type and recover them later. Reach for `sumtype` when the set of types is known and you simply want them to share a trait, without the cost (or the `'static` requirement) of `Box<dyn Trait>` or `dyn Any`.
+
+## Recovering a concrete type
+
+When you *do* need to recover the original type — `dyn Any`'s use case — `sumtype` offers the
+[`Downcast`](https://docs.rs/sumtype/latest/sumtype/trait.Downcast.html) trait, implemented
+automatically for every generated sum type. Name the target type(s) in the return bound
+(`+ Downcast<To>`), and it works with the ordinary type-less `sumtype!(expr)` form:
+
+```rust
+use sumtype::{sumtype, Downcast};
+
+#[sumtype(sumtype::traits::Debug)]
+fn make(b: bool) -> impl std::fmt::Debug + Downcast<u32> + Downcast<String> {
+    if b { sumtype!(1u32) } else { sumtype!(String::from("hi")) }
+}
+
+let v = make(true);
+assert_eq!(Downcast::<u32>::downcast_ref(&v), Some(&1u32)); // the active variant
+assert_eq!(Downcast::<String>::downcast_ref(&v), None);     // wrong type
+
+// Move the value out, or get the sum type back unchanged on a miss:
+assert_eq!(Downcast::<u32>::downcast(make(true)).ok(), Some(1u32));
+```
+
+Because downcasting checks the wrapped type at runtime (via `TypeId`), both the target and the
+wrapped types must be `'static` (so it is unavailable for sum types that wrap a borrowed value).
+`downcast_ref`/`downcast_mut` are allocation-free; the owning `downcast` boxes the value briefly to
+move it out. `To` is a trait parameter, so it is chosen by a type annotation or a
+`Downcast::<To>::…` call (not a method turbofish), which also lets `Downcast<To>` be used as a
+generic bound: `fn f<E: Downcast<u32>>(e: E) { … }`. (Exposing the named sum type — a `-> sumtype!()`
+return or a field — also works and makes every target type available at once.)
 
 ## Using `#[sumtype]` in other contexts
 

@@ -17,6 +17,19 @@ mod supertrait;
 use generics::*;
 use supertrait::sumtrait_impl;
 
+/// Resolves the path to the `sumtype` crate, honoring a rename in the downstream `Cargo.toml`
+/// (e.g. `renamed = { package = "sumtype" }`). Falls back to `::sumtype` (which also covers the
+/// `FoundCrate::Itself` case, where `::sumtype` resolves in the crate's own integration tests).
+fn sumtype_crate() -> Path {
+    match proc_macro_crate::crate_name("sumtype") {
+        Ok(proc_macro_crate::FoundCrate::Name(name)) => {
+            let id = Ident::new(&name, Span::call_site());
+            parse_quote!(::#id)
+        }
+        _ => parse_quote!(::sumtype),
+    }
+}
+
 #[derive(Parse)]
 struct Arguments {
     #[call(Punctuated::parse_terminated)]
@@ -240,6 +253,8 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                     )
                 })
                 .collect::<Vec<_>>();
+            // Path to the `sumtype` crate, robust to a rename in the downstream `Cargo.toml`.
+            let krate = sumtype_crate();
             let out = quote! {
                 #(for reft in &reftypes) {
                     #[doc(hidden)]
@@ -288,6 +303,66 @@ Example: sumtype!(std::iter::empty(), std::iter::Empty<T>)
                         &where_clause,
                         constraint_trait,
                     ) }
+                }
+                // `Downcast` lets callers recover a concrete variant type. It is gated on the
+                // wrapped types (and the target) being `'static`, so it is simply unavailable for
+                // sum types that wrap borrowed values.
+                #[doc(hidden)]
+                #[allow(non_camel_case_types)]
+                impl<
+                    #(#impl_generics,)*
+                    #(#unspecified_ty_params,)*
+                    __Sumtype_Downcast_To: 'static
+                > #krate::Downcast<__Sumtype_Downcast_To>
+                    for #enum_ident<#(#ty_generics,)* #(#unspecified_ty_params),*>
+                where
+                    #(#where_clause,)*
+                    // `Self: 'static` gates the impl on the whole sum type (hence every wrapped
+                    // type) being `'static`, and decomposes into the region bounds the `&_ as &dyn
+                    // Any` casts and `TypeId` lookups need. It is simply unsatisfiable — so the impl
+                    // is unavailable, not an error — when a variant borrows.
+                    Self: 'static,
+                {
+                    fn downcast_ref(&self) -> ::core::option::Option<&__Sumtype_Downcast_To> {
+                        match self {
+                            #(for (vid, _ty) in &variants) {
+                                #enum_ident::#vid(__sumtype_v) =>
+                                    (__sumtype_v as &dyn ::core::any::Any)
+                                        .downcast_ref::<__Sumtype_Downcast_To>(),
+                            }
+                            #enum_ident::__Uninhabited(_) => ::core::option::Option::None,
+                        }
+                    }
+                    fn downcast_mut(&mut self) -> ::core::option::Option<&mut __Sumtype_Downcast_To> {
+                        match self {
+                            #(for (vid, _ty) in &variants) {
+                                #enum_ident::#vid(__sumtype_v) =>
+                                    (__sumtype_v as &mut dyn ::core::any::Any)
+                                        .downcast_mut::<__Sumtype_Downcast_To>(),
+                            }
+                            #enum_ident::__Uninhabited(_) => ::core::option::Option::None,
+                        }
+                    }
+                    fn downcast(self) -> ::core::result::Result<__Sumtype_Downcast_To, Self> {
+                        match self {
+                            #(for (vid, ty) in &variants) {
+                                #enum_ident::#vid(__sumtype_v) => {
+                                    match (::std::boxed::Box::new(__sumtype_v)
+                                        as ::std::boxed::Box<dyn ::core::any::Any>)
+                                        .downcast::<__Sumtype_Downcast_To>()
+                                    {
+                                        ::core::result::Result::Ok(__sumtype_b) =>
+                                            ::core::result::Result::Ok(*__sumtype_b),
+                                        ::core::result::Result::Err(__sumtype_any) =>
+                                            ::core::result::Result::Err(#enum_ident::#vid(
+                                                *__sumtype_any.downcast::<#ty>().ok().unwrap(),
+                                            )),
+                                    }
+                                }
+                            }
+                            #enum_ident::__Uninhabited(_) => ::core::unreachable!(),
+                        }
+                    }
                 }
             };
             (out, self)
@@ -684,7 +759,7 @@ pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
         )
     });
 
-    let krate = args.krate.unwrap_or(parse_quote!(::sumtype));
+    let krate = args.krate.unwrap_or_else(sumtype_crate);
     sumtrait_impl(
         args.implement,
         &args.marker,
