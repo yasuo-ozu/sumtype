@@ -2,7 +2,7 @@
 name = "sumtype-macro"
 description = "Generate zerocost anonymous sum types that implement common traits"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
-version = "0.3.0"
+version = "0.4.0"
 repository = "https://github.com/yasuo-ozu/sumtype"
 homepage = "https://github.com/yasuo-ozu/sumtype"
 documentation = "https://docs.rs/sumtype"
