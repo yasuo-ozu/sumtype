@@ -7,9 +7,9 @@
 [GitHub Actions]: https://github.com/yasuo-ozu/sumtype/actions/workflows/rust.yml/badge.svg
 [actions]: https://github.com/yasuo-ozu/sumtype/actions/workflows/rust.yml
 
-In Rust, when a function needs to return different types that implement the same trait based on its arguments, it can be challenging because even if the types provide the same interface, they are considered to have different concrete types. This makes it impossible to simply use a return statement to return them directly. A common solution to this problem is to use `Box<dyn Trait>`, but this approach has two drawbacks: it incurs extra heap memory usage, and it does not provide zero-cost abstraction. Additionally, the types must often have a `'static` lifetime.
+In Rust, returning one of several different types from a function depending on its arguments is awkward: even when the types share the same interface, they remain distinct concrete types, so you cannot return them directly from a single function. The usual workaround is `Box<dyn Trait>`, but it has drawbacks — it allocates on the heap, it is not a zero-cost abstraction, and the boxed type often has to be `'static`.
 
-Here’s an example to illustrate this:
+For example:
 
 ```rust
 // Example with Iterator trait
@@ -31,12 +31,11 @@ fn conditional_reader(use_file: bool) -> Box<dyn std::io::Read> {
 }
 ```
 
-In these examples, the functions need to return different concrete types that implement the same trait (`Iterator` or `Read`). Using `Box<dyn Trait>` allows us to return them from the same function, but it introduces the aforementioned drawbacks.
+Each function returns one of two different concrete types that implement the same trait (`Iterator` or `Read`). `Box<dyn Trait>` lets them share a return type, but only at the cost of the drawbacks above.
 
+This crate solves the problem by generating a single anonymous sum type for each context annotated with the `#[sumtype]` attribute. The `sumtype!(expr)` macro wraps an expression in that sum type, so the otherwise-distinct types all become one type within the same `#[sumtype]` context — which is what lets a single function return any of them. The sum type is a plain enum, so it needs no heap allocation, and it remains a zero-cost abstraction: when the branch is known at compile time, the compiler can collapse the enum away and leave only the concrete type.
 
-This crate addresses these issues by generating a single anonymous sum type for contexts decorated with the `#[sumtype]` attribute. By using the `sumtype!([expr])` macro, you can wrap the given expression in this sum type. Since the wrapped types become the same type within the same `#[sumtype]` context, it enables scenarios like returning different types that implement the same trait from a single function. Internally, this sum type uses a simple enum, which means it does not consume additional heap memory. Furthermore, it provides zero-cost abstraction. For instance, in the previous examples, if the conditions can be determined statically by the compiler, the returned types can also be determined, potentially eliminating any additional abstraction cost introduced by the sum type.
-
-Here's how it looks with `sumtype`:
+The same functions written with `sumtype`:
 
 ```rust
 use sumtype::sumtype;
@@ -62,11 +61,11 @@ fn conditional_reader(use_cursor: bool) -> impl std::io::Read {
 }
 ```
 
-In these examples, the `#[sumtype]` attribute generates a sum type that can wrap different concrete types implementing the specified trait. The `sumtype!` macro is used to wrap the expressions, allowing them to be treated as the same type within the function. Because the sum type uses a simple enum internally, it avoids additional heap allocations. If the conditions are known at compile time, the compiler can optimize the returned types without incurring extra abstraction costs.
+Here `#[sumtype]` generates a sum type that can hold any of the concrete types implementing the specified trait, and `sumtype!` wraps each expression so they share that type within the function. Because the sum type is a plain enum, it avoids heap allocation, and when the branch is known at compile time the compiler optimizes the abstraction away.
 
 ## Zero-Cost Abstraction vs `Box<dyn Trait>`
 
-One of the key advantages of `sumtype` is its **zero-cost abstraction** when compared to `Box<dyn Trait>`. 
+A key advantage of `sumtype` over `Box<dyn Trait>` is its **zero-cost abstraction**.
 
 **Benefits of `sumtype`:**
 1. **No heap allocation** - Uses stack-allocated enum variants
@@ -74,11 +73,26 @@ One of the key advantages of `sumtype` is its **zero-cost abstraction** when com
 3. **Compile-time optimization** - When conditions are known statically, the compiler can eliminate the enum entirely
 4. **Zero runtime cost** - In the best case, compiles down to the concrete type with no abstraction overhead
 
-When conditions are statically known at compile time, the `sumtype` version can be orders of magnitude faster because it compiles down to direct usage of the concrete type with zero abstraction overhead.
+When the branch is known at compile time, the `sumtype` version can be far faster than a boxed trait object, because it compiles down to direct use of the concrete type with no abstraction overhead.
 
-Additionally, sumtype can be used not only in functions but also in other contexts. For example, by using `#[sumtype]` in an expression block, you can initialize different types that implement the same trait based on certain conditions and assign them to a specific variable.
+## Difference from `std::any::Any`
 
-Here's an example to illustrate this:
+`std::any::Any` can also hold a value that is one of many concrete types, but it solves a different problem. `Any` is about *type erasure and recovery*: you store a value as `Box<dyn Any>` (or `&dyn Any`) and later try to recover its original type with `downcast_ref::<T>()`. `sumtype` is about *unifying a fixed set of types behind a shared trait*, so that you keep calling that trait's methods directly.
+
+|                              | `sumtype`                                  | `dyn Any`                                                   |
+| ---------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
+| Set of types                 | closed — known per `#[sumtype]` context    | open — any `'static` type                                   |
+| Calling the shared trait     | direct; the sum type implements it         | not possible — you must `downcast` to a concrete type first |
+| Recovering the concrete type | not the goal                               | `downcast`, which can fail at runtime                       |
+| Allocation                   | none (stack-allocated enum)                | usually `Box` (heap)                                        |
+| Dispatch                     | static, and often optimized away entirely  | runtime `TypeId` comparison                                 |
+| `'static` requirement        | none — works with borrows and lifetimes    | required (`Any: 'static`)                                   |
+
+In short, reach for `dyn Any` when you genuinely need runtime reflection — to stash values of an unknown type and recover them later. Reach for `sumtype` when the set of types is known and you simply want them to share a trait, without the cost (or the `'static` requirement) of `Box<dyn Trait>` or `dyn Any`.
+
+## Using `#[sumtype]` in other contexts
+
+`#[sumtype]` is not limited to functions. Applied to an expression block, for instance, it lets you initialize one of several trait-implementing types based on a condition and bind the result to a variable:
 
 ```ignore
 # use sumtype::sumtype;
@@ -98,9 +112,9 @@ for value in iter {
 }
 ```
 
-In this example, the `#[sumtype]` attribute is applied to an expression block, allowing different types that implement the same trait to be initialized based on the condition. These are then wrapped using the `sumtype!` macro and assigned to the `iter` variable, making it possible to work with them uniformly throughout the code. Unfortunately, this feature requires nightly Rust and `#![feature(proc_macro_hygiene)]`, see [Tracking issue for procedural macros and "hygiene 2.0"](https://github.com/rust-lang/rust/issues/54727).
+Here `#[sumtype]` is applied to an expression block: each branch is wrapped with `sumtype!` and bound to `iter`, which can then be used uniformly in the rest of the code. Note that this form requires nightly Rust and `#![feature(proc_macro_hygiene)]` — see the [tracking issue for procedural macros and "hygiene 2.0"](https://github.com/rust-lang/rust/issues/54727).
 
-Additionally, `#[sumtype]` can be used when defining traits as well as when implementing them. Here are examples for each case:
+`#[sumtype]` can also be applied when defining a trait and when implementing one. Here is an example of each.
 
 Using `#[sumtype]` with a trait definition:
 
@@ -118,7 +132,7 @@ trait MyTrait {
 }
 ```
 
-In this example, `#[sumtype]` is applied to a trait definition. This could be useful for scenarios where you want to create sum types that can represent different implementations of a trait.
+Here `#[sumtype]` is applied to a trait definition — useful when a trait's default method body needs to return a sum type.
 
 Using `#[sumtype]` on a trait and on an implementation of it for a concrete type:
 
@@ -144,7 +158,7 @@ impl MyTrait for StructA {
 }
 ```
 
-Here, `StructA` implements `MyTrait` and uses `sumtype!` to wrap a range iterator.
+Here, `StructA` implements `MyTrait`, wrapping a range iterator with `sumtype!`.
 
 Using `#[sumtype]` with a module definition:
 
@@ -305,7 +319,7 @@ handle_error(get_error(false));
 
 ## Custom Traits
 
-You can also define your own traits to work with `sumtype` using the [`#[sumtrait]`](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) attribute. This allows you to extend sumtype support to any trait that meets the sumtrait-safety requirements.
+You can make your own traits work with `sumtype` using the [`#[sumtrait]`](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) attribute, which extends support to any trait that satisfies the sumtrait-safety requirements.
 
 ```rust
 use sumtype::{sumtype, sumtrait};
@@ -345,4 +359,4 @@ fn get_processor(use_a: bool) -> impl MyCustomTrait {
 }
 ```
 
-See the [`#[sumtrait]` documentation](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) for more details on sumtrait-safety requirements and advanced usage patterns for creating custom sumtype-compatible traits.
+See the [`#[sumtrait]` documentation](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) for the full sumtrait-safety requirements and more advanced patterns for building custom sumtype-compatible traits.

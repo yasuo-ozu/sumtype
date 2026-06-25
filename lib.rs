@@ -11,26 +11,28 @@ struct CompileFailCases;
 #[doc(hidden)]
 pub use sumtype_macro::_sumtrait_internal;
 
-/// Makes a user-defined trait usable by sumtype.
+/// Makes a user-defined trait usable with `#[sumtype]`.
 ///
 /// ## Arguments
 ///
-/// - `implement` (optional) - The actual implemented trait with `#[sumtype]`. This argument
-///   is used for traits from `std` (or other 3rd-party libraries) to be compatible with sumtype.
-/// - `krate` (optional) - The path to the `sumtype` crate. Default is `::sumtype`.
-/// - `marker` - You should specify the absolute path of an empty type (defined in the same
-///   crate as the trait), which is visible from user crates (who will implement the trait
-///   with `#[sumtype]`).
+/// - `implement` (optional) — the real trait that the generated sum type should implement. Use it
+///   to make a `std` (or other third-party) trait compatible with `sumtype` by declaring a local
+///   mock trait that mirrors it.
+/// - `krate` (optional) — the path to the `sumtype` crate (default: `::sumtype`).
+/// - `marker` — the absolute path of an empty type, defined in the same crate as the trait and
+///   visible to the crates that will use the trait with `#[sumtype]`.
 ///
 /// ## Supertraits
 ///
-/// You can specify supertraits using `trait ... : <supertraits> { ... }` syntax. All supertraits
-/// should also be annotated with `#[sumtrait]` and specified with absolute paths for best practice.
+/// Supertraits are declared with the usual `trait Foo: Bar { ... }` syntax. Each supertrait must be
+/// either a built-in trait that `sumtype` recognizes (`Copy`, `Clone`, `Hash`, `Debug`, `Display`,
+/// `Error`, `Iterator`, `Read` — bare or via a `std`/`core` path) or another `#[sumtrait]` trait;
+/// referring to a custom trait by an absolute path is recommended.
 ///
-/// ## Sumtrait-safe
+/// ## Sumtrait-safety
 ///
-/// All traits annotated with `#[sumtrait]` must satisfy sumtrait-safety. This is similar to object safety,
-/// but slightly different.
+/// Every trait annotated with `#[sumtrait]` must be *sumtrait-safe*. This is similar to object
+/// safety, but not identical.
 ///
 /// A trait is called sumtrait-safe when it satisfies all of the following:
 ///
@@ -49,11 +51,11 @@ pub use sumtype_macro::_sumtrait_internal;
 /// ```
 pub use sumtype_macro::sumtrait;
 
-/// Enables `sumtype!(..)` macro in the context.
+/// Enables the `sumtype!(..)` macro within the annotated context.
 ///
-/// For each context marked by `#[sumtype]`, sumtype creates a union type of several
-/// [`std::iter::Iterator`] types. To intern an expression of `Iterator` into the union type, you
-/// can use `sumtype!([expr])` syntax. This is an example of returning a unified `Iterator`:
+/// For each context marked with `#[sumtype]`, the macro creates a single anonymous sum type that
+/// implements the trait(s) you specify. Wrap an expression with `sumtype!(expr)` to store it in
+/// that sum type. For example, to return a unified iterator:
 ///
 /// ```
 /// # use sumtype::sumtype;
@@ -68,13 +70,12 @@ pub use sumtype_macro::sumtrait;
 /// }
 /// ```
 ///
-/// This function returns [`std::iter::Once`] or [`std::vec::IntoIter`] depending on the `a` value. The
-/// `#[sumtype]` system creates an anonymous union type that is also [`std::iter::Iterator`], and wraps
-/// each `sumtype!(..)` expression with the union type. The mechanism is zero-cost when `a` is fixed
-/// at compile time.
+/// Depending on `a`, this returns a [`std::iter::Once`] or a [`std::vec::IntoIter`]. `#[sumtype]`
+/// creates an anonymous sum type that also implements [`std::iter::Iterator`] and wraps each
+/// `sumtype!(..)` expression in it. The abstraction is zero-cost when `a` is known at compile time.
 ///
-/// You can specify the exact (non-anonymous) type using `sumtype!()` macro in type context. In this
-/// case, you should specify the type using `sumtype!([expr], [type])` format like:
+/// You can also name the sum type explicitly with `sumtype!()` in type position. When you do, give
+/// each wrapped expression's concrete type using the `sumtype!(expr, Type)` form:
 ///
 /// ```
 /// # use sumtype::sumtype;
@@ -95,8 +96,8 @@ pub trait TypeRef<const RANDOM: usize, const N: usize> {
     type Type: ?Sized;
 }
 
-/// Provides mock traits which are targeted by `#[sumtype]` macros. This is to make
-/// traits from other crates compatible with `#[sumtype]`.
+/// Mock traits targeted by the `#[sumtype]` macro. They make the corresponding `std`/`core` traits
+/// usable with `#[sumtype]`.
 pub mod traits {
     use super::sumtrait;
 
