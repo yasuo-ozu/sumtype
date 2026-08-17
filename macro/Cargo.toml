@@ -2,7 +2,7 @@
 name = "sumtype-macro"
 description = "Generate zerocost anonymous sum types that implement common traits"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
-version = "0.4.0"
+version = "0.4.1"
 repository = "https://github.com/yasuo-ozu/sumtype"
 homepage = "https://github.com/yasuo-ozu/sumtype"
 documentation = "https://docs.rs/sumtype"
@@ -24,7 +24,7 @@ proc-macro-crate = "1"
 derive-syn-parse = "0.1.5"
 darling = "0.20.10"
 syn_derive = "0.1.8"
-type-leak = "0.3.0"
+type-leak = "0.7"
 
 [dependencies.syn]
 version = "2.0"

@@ -123,8 +123,7 @@ fn process_supported_supertraits<'a>(
 }
 
 fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
-    let mut leaker = Leaker::from_trait(input)
-        .unwrap_or_else(|_| Leaker::with_generics(input.generics.clone()));
+    let mut leaker = Leaker::from_trait(input).unwrap_or_else(|_| Leaker::new());
     leaker.self_ty_can_be_interned = false;
     leaker
         .finish()
