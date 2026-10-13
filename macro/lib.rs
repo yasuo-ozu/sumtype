@@ -474,7 +474,7 @@ const _: () = {
             }
             let arg: Arg = mac
                 .parse_body()
-                .unwrap_or_else(|e| abort!(e.span(), &format!("{}", &e)));
+                .unwrap_or_else(|e| abort!(e.span(), &format!("{}", e)));
             let ty_generics = merge_generic_args(
                 self.generics
                     .iter()
@@ -581,7 +581,7 @@ const _: () = {
             }
             let arg: Arg = mac
                 .parse_body()
-                .unwrap_or_else(|e| abort!(e.span(), &format!("{}", &e)));
+                .unwrap_or_else(|e| abort!(e.span(), &format!("{}", e)));
             let n = self.found_exprs.len();
             let variant_ident = Ident::new(&format!("__SumType_Variant_{}", n), Span::call_site());
             let reftype_ident = Ident::new(

@@ -2,13 +2,13 @@
 name = "sumtype"
 description = "Generate zerocost anonymous sum types that implement common traits"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
-version = "0.5.0"
+version = "0.5.1"
 repository = "https://github.com/yasuo-ozu/sumtype"
 homepage = "https://github.com/yasuo-ozu/sumtype"
 documentation = "https://docs.rs/sumtype"
 readme = "README.md"
 edition = "2021"
-rust-version = "1.57"
+rust-version = "1.58"
 keywords = ["macros", "zerocost", "enum", "union-type", "iterator"]
 categories = ["data-structures", "memory-management", "rust-patterns"]
 license = "MIT"
@@ -17,7 +17,7 @@ license = "MIT"
 path = "lib.rs"
 
 [dependencies]
-sumtype-macro = { path = "macro", version = "0.5.0" }
+sumtype-macro = { path = "macro", version = "0.5.1" }
 announce = "0.1.0"
 announce-std = "0.1.0"
 

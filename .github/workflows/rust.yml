@@ -11,15 +11,33 @@ env:
 
 jobs:
   msrv:
-    name: MSRV (1.57.0)
+    name: MSRV (1.58.1)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@1.57.0
-    # Only `cargo check` at the MSRV (announce's): it verifies the library targets compile on 1.57
-    # without building the test suite (the tests use newer-than-1.57 syntax, which is dev-only).
+    - name: Install toolchains
+      run: |
+        rustup toolchain install stable --profile minimal
+        rustup toolchain install 1.58.1 --profile minimal
+    # `cargo check` of the library targets only (the tests are dev-only and need newer Rust).
+    # Cargo 1.58 cannot read the current lock file or registry cache, so check a copy
+    # without dev-dependencies, with a lock file from the MSRV-aware resolver of a
+    # recent cargo, a few pins of crates that do not declare `rust-version`, and
+    # vendored sources.
     - name: cargo check
-      run: cargo check --workspace --verbose
+      run: |
+        work=$(mktemp -d)
+        git archive HEAD | tar -x -C "$work"
+        cd "$work"
+        rm -f Cargo.lock
+        sed -i '/^\[dev-dependencies\]/,/^\[/{/^trybuild/d}' Cargo.toml
+        CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback cargo +stable generate-lockfile
+        cargo +stable update -p proc-macro-crate --precise 1.1.3
+        cargo +stable update -p serde --precise 1.0.150
+        cargo +stable vendor vendor >/dev/null
+        mkdir -p .cargo
+        printf '[source.crates-io]\nreplace-with = "vendored-sources"\n\n[source.vendored-sources]\ndirectory = "vendor"\n' > .cargo/config.toml
+        cargo +1.58.1 check --offline --workspace --verbose
 
   test:
     name: Build, test, clippy (stable)
