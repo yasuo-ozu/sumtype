@@ -66,7 +66,7 @@ add to your `Cargo.toml` next to `sumtype`:
 
 ```toml
 [dependencies]
-sumtype = "0.4"
+sumtype = "0.5"
 announce-std = "0.1"
 ```
 
@@ -249,7 +249,7 @@ Other traits of `announce-std` work the same way, as long as the generated sum t
 them (see [Custom Traits](#custom-traits)). Several traits are joined with `+`:
 `#[sumtype(::announce_std::iter::Iterator + ::announce_std::clone::Clone)]`.
 
-The module `sumtype::traits` is gone: see [Changes in the announce port](#changes-in-the-announce-port).
+The module `sumtype::traits` is gone: see [Changes in 0.5](#changes-in-05).
 
 ### More Examples
 
@@ -491,10 +491,10 @@ and the like are available without a dependency on `announce` itself. Pass
 See the [`sumtype::check` documentation](https://docs.rs/sumtype/latest/sumtype/macro.check.html)
 for the full requirements and more advanced patterns for building custom sumtype-compatible traits.
 
-## Changes in the announce port
+## Changes in 0.5
 
 `sumtype` now passes trait definitions with [announce](https://docs.rs/announce) trampolines. This
-is a breaking change for the users of 0.4.1 (the crate version is unchanged on this branch):
+is a breaking change for the users of 0.4:
 
 - **`sumtype::traits` is removed.** Name the `std` traits through `announce-std` (add
   `announce-std = "0.1"` to your `Cargo.toml`): `#[sumtype(::announce_std::iter::Iterator)]` instead

@@ -2,7 +2,7 @@
 name = "sumtype"
 description = "Generate zerocost anonymous sum types that implement common traits"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
-version = "0.4.1"
+version = "0.5.0"
 repository = "https://github.com/yasuo-ozu/sumtype"
 homepage = "https://github.com/yasuo-ozu/sumtype"
 documentation = "https://docs.rs/sumtype"
@@ -17,7 +17,7 @@ license = "MIT"
 path = "lib.rs"
 
 [dependencies]
-sumtype-macro = { path = "macro", version = "0.4.1" }
+sumtype-macro = { path = "macro", version = "0.5.0" }
 announce = "0.1.0"
 announce-std = "0.1.0"
 
