@@ -1,8 +1,11 @@
 use super::{random, split_for_impl};
+use crate::supertrait::process_supported_supertraits;
+use announce::helper::{Cont, Entry, Gather, KvArgs};
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use std::collections::HashMap;
+use syn::parse::Parse;
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
 use syn::*;
@@ -22,81 +25,40 @@ impl ToTokens for IdentAndType {
         self.ty.to_tokens(tokens);
     }
 }
-#[derive(syn_derive::Parse)]
-struct SumtraitInternalContextInner {
-    constraint_expr_trait_ident: Ident,
-    _comma_61: Token![,],
-    // Parsed for layout but unused: a user `#[sumtrait]` implements its own trait via
-    // `item_trait.ident`, and a built-in uses its `implement = …` path.
-    _trait_path: Path,
-    _comma_0: Token![,],
+/// The `REST` of the trampoline: the `#[sumtype]` site's context, written by `gen_trait_impls`.
+struct Context {
+    krate: Path,
+    bounds: Punctuated<Bound, Token![,]>,
     enum_path: Path,
-    _comma_1: Token![,],
-    #[syn(bracketed)]
-    _bracket_token0: syn::token::Bracket,
-    #[syn(in = _bracket_token0)]
-    #[parse(Punctuated::parse_terminated)]
     unspecified_ty_params: Punctuated<Ident, Token![,]>,
-    _comma_2: Token![,],
-    #[syn(bracketed)]
-    _bracket_token1: syn::token::Bracket,
-    #[syn(in = _bracket_token1)]
-    #[parse(Punctuated::parse_terminated)]
     variants: Punctuated<IdentAndType, Token![,]>,
-    _comma_3: Token![,],
-    #[syn(bracketed)]
-    _bracket_token2: syn::token::Bracket,
-    #[syn(in = _bracket_token2)]
-    #[parse(Punctuated::parse_terminated)]
     impl_generics_base: Punctuated<GenericParam, Token![,]>,
-    _comma_4: Token![,],
-    #[syn(bracketed)]
-    _bracket_token3: syn::token::Bracket,
-    #[syn(in = _bracket_token3)]
-    #[parse(Punctuated::parse_terminated)]
     ty_generics_base: Punctuated<GenericArgument, Token![,]>,
-    _comma_5: Token![,],
-    #[syn(braced)]
-    _brace_token1: syn::token::Brace,
-    #[syn(in = _brace_token1)]
-    where_clause_base: TokenStream,
-    _comma_6: Token![,],
+    where_clause_base: Punctuated<WherePredicate, Token![,]>,
 }
 
 #[derive(syn_derive::Parse)]
-struct SumtraitInternalContent {
-    #[syn(braced)]
-    _brace_token0: syn::token::Brace,
-    #[syn(in = _brace_token0)]
-    inner: SumtraitInternalContextInner,
-    #[syn(bracketed)]
-    _bracket_token4: syn::token::Bracket,
-    #[syn(in = _bracket_token4)]
-    #[parse(Punctuated::parse_terminated)]
-    typerefs: Punctuated<Type, Token![,]>,
-    _comma_7: Token![,],
-    #[syn(braced)]
-    _brace_token: syn::token::Brace,
-    #[syn(in = _brace_token)]
-    item_trait: ItemTrait,
-    _comma_8: Token![,],
-    typeref_id: LitInt,
-    _comma_9: Token![,],
-    krate: Path,
-    _comma_10: Token![,],
-    marker_path: Path,
-    _comma_11: Token![,],
-    #[syn(bracketed)]
-    _bracket_token5: syn::token::Bracket,
-    #[syn(in = _bracket_token5)]
-    implementation: Type,
-    _comma_12: Token![,],
-    #[syn(bracketed)]
-    _bracket_token6: syn::token::Bracket,
-    #[syn(in = _bracket_token6)]
-    #[parse(Punctuated::parse_terminated)]
-    supertraits: Punctuated<Path, Token![,]>,
-    _comma_13: Token![,],
+struct Bound(Path, #[allow(dead_code)] Token![=>], Ident);
+
+fn list<T: Parse>(kv: &mut KvArgs, key: &str) -> Result<Punctuated<T, Token![,]>> {
+    Ok(kv.list::<T>(key)?.unwrap_or_default().into_iter().collect())
+}
+
+impl Context {
+    fn parse(rest: &announce::helper::Input) -> Result<Self> {
+        let mut kv: KvArgs = parse2(rest.rest_as::<proc_macro2::Group>()?.stream())?;
+        let ctx = Context {
+            krate: kv.require("krate")?,
+            bounds: list(&mut kv, "bounds")?,
+            enum_path: kv.require("enum_path")?,
+            unspecified_ty_params: list(&mut kv, "unspecified_ty_params")?,
+            variants: list(&mut kv, "variants")?,
+            impl_generics_base: list(&mut kv, "impl_generics_base")?,
+            ty_generics_base: list(&mut kv, "ty_generics_base")?,
+            where_clause_base: list(&mut kv, "where_clause_base")?,
+        };
+        kv.finish().map(|_| ctx)
+    }
 }
 
 fn has_self_ty(ty: &Type) -> Option<Span> {
@@ -192,14 +154,10 @@ fn generate_fn_args(
 #[allow(clippy::too_many_arguments)]
 fn process_fn(
     item_fn: &TraitItemFn,
-    typerefs: &HashMap<Type, usize>,
     variants: &Punctuated<IdentAndType, Token![,]>,
     iter_ty_generics: &[GenericArgument],
     enum_path: &Path,
-    krate: &Path,
-    marker_path: &Path,
     implementation: &Path,
-    typeref_id: &LitInt,
 ) -> TokenStream {
     let self_arg_ident = Ident::new("__sumtrait_self_arg", Span::call_site());
     let (args, recv, return_is_self) = generate_fn_args(&item_fn.sig, &self_arg_ident);
@@ -222,27 +180,10 @@ fn process_fn(
     quote! {
         #{&item_fn.sig.constness} #{&item_fn.sig.asyncness} #{&item_fn.sig.unsafety}
         #{&item_fn.sig.abi} fn #{&item_fn.sig.ident} #fn_impl_generics (
-            #(for (input, _) in &args), {
-                #(if let FnArg::Typed(pat_type) = input) {
-                    #(if let Some(index) = typerefs.get(&pat_type.ty)) {
-                        #{&pat_type.pat} #{&pat_type.colon_token} <#marker_path as #krate::TypeRef<#typeref_id, #index>>::Type
-                    } #(else) {
-                        #pat_type
-                    }
-                } #(else) {
-                    #input
-                }
-            }
+            #(for (input, _) in &args), { #input }
             #{&item_fn.sig.variadic}
         )
-        #(if let ReturnType::Type(arr, ty) = &item_fn.sig.output) {
-            #arr
-            #(if let Some(index) = typerefs.get(ty)) {
-                <#marker_path as #krate::TypeRef<#typeref_id, #index>>::Type
-            } #(else) {
-                #ty
-            }
-        } #fn_where_clause {
+        #{&item_fn.sig.output} #fn_where_clause {
             #(if let Some(recv) = recv) {
                 match #recv {
                     #(for IdentAndType{ident, ty, ..} in variants) {
@@ -298,68 +239,238 @@ where
     a.into_iter().map(|a| quote!(#a))
 }
 
-pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
-    let SumtraitInternalContent {
-        inner:
-            SumtraitInternalContextInner {
-                enum_path,
-                unspecified_ty_params,
-                variants,
-                impl_generics_base,
-                ty_generics_base,
-                where_clause_base,
-                constraint_expr_trait_ident,
-                ..
-            },
-        typerefs,
-        item_trait,
-        typeref_id,
+/// One fetched trait definition, deduplicated by the trait it implements.
+struct Node {
+    item_trait: ItemTrait,
+    implementation: Path,
+    /// Supertraits as `#[sumtype]` invokes them (built-ins mapped to `krate::traits::*`).
+    supertraits: Vec<Path>,
+}
+
+fn key_of(p: &Path) -> String {
+    quote!(#p).to_string()
+}
+
+/// Supertraits of a fetched definition, mapped as `#[sumtrait]` always did. The `Sized` of
+/// announce-std's `Clone` mock is dropped (every sum type is `Sized`).
+fn supertraits_of(entry: &Entry, item: &ItemTrait, krate: &Path) -> Vec<Path> {
+    let supers = process_supported_supertraits(
+        item.supertraits.iter().filter(|b| {
+            !matches!(b, TypeParamBound::Trait(t) if entry.mock().is_some()
+                && matches!(t.path.segments.last(), Some(s) if s.ident == "Sized"))
+        }),
         krate,
-        marker_path,
+    );
+    for p in &supers {
+        if p.segments.iter().any(|s| !s.arguments.is_empty()) {
+            abort!(
+                p.span(),
+                "generic supertraits are not supported by `#[sumtrait]`"
+            );
+        }
+    }
+    supers
+}
+
+/// `announce-std` mocks give provided methods a placeholder body. Only required methods are
+/// forwarded (forwarding e.g. `Iterator::count`/`last` also breaks inference in `tests/bug.rs`),
+/// except `Error::source`, whose default (`None`) would hide the variant's source.
+fn forwarded_by_mock(mock: &Path, f: &TraitItemFn) -> bool {
+    f.default.is_none()
+        || (f.sig.ident == "source"
+            && matches!(mock.segments.last(), Some(s) if s.ident == "Error"))
+}
+
+/// The trait of an entry: `#[sumtrait]` announces it wrapped in a same-named module (see
+/// `supertrait::sumtrait_impl`); announce-std mocks and third-party `#[announce]` traits announce
+/// the trait itself. A trait announced with `repeater = ..` has its relative types rewritten to
+/// the repeater projections (its `type_leak` META), so they resolve here.
+fn trait_of(entry: &Entry) -> Option<ItemTrait> {
+    let mut item = parse2::<Item>(entry.item.clone()).ok()?;
+    if let Some(type_leak) = entry.type_leak().ok().flatten() {
+        type_leak.apply(&mut item);
+    }
+    match item {
+        Item::Trait(t) => Some(t),
+        Item::Mod(ItemMod {
+            content: Some((_, items)),
+            ..
+        }) => match <[Item; 1]>::try_from(items) {
+            Ok([Item::Trait(t)]) => Some(t),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn node_of(entry: &Entry, krate: &Path) -> Result<Node> {
+    let mut item_trait: ItemTrait = trait_of(entry).unwrap_or_else(|| {
+        abort!(
+            entry.key.path().span(),
+            "`{}` is not a trait; `#[sumtype]` bounds must be `#[sumtrait]` traits or `sumtype::traits::*`",
+            key_of(&entry.key.path())
+        )
+    });
+    let supertraits = supertraits_of(entry, &item_trait, krate);
+    let mut kv = entry
+        .find_meta("sumtrait_meta")
+        .map(|m| m.kv())
+        .transpose()?
+        .unwrap_or_default();
+    let implementation = match (entry.mock(), kv.get::<Path>("implement")?) {
+        // An `announce-std` mock: implement the real std trait.
+        (Some(mock), _) => {
+            item_trait.items.retain(|i| match i {
+                TraitItem::Fn(f) => forwarded_by_mock(&mock, f),
+                _ => true,
+            });
+            mock
+        }
+        // `#[sumtrait(implement = ..)]`
+        (None, Some(path)) => path,
+        // No `implement = ...`: this is a user `#[sumtrait]`, so implement the trait itself,
+        // by the path its trampoline was invoked through (it resolves at the `#[sumtype]` site).
+        _ => entry.key.path(),
+    };
+    kv.finish()?;
+    Ok(Node {
+        item_trait,
         implementation,
         supertraits,
-        ..
-    } = parse2(input.clone())
-        .unwrap_or_else(|e| abort!(Span::call_site(), format!("Bad content: {}", e)));
+    })
+}
 
-    #[derive(syn_derive::Parse)]
-    struct TraitIdentAndOther {
-        #[syn(braced)]
-        _brace_token0: syn::token::Brace,
-        #[syn(in = _brace_token0)]
-        _trait_ident: Ident,
-        #[syn(in = _brace_token0)]
-        _comma_61: Token![,],
-        #[syn(in = _brace_token0)]
-        other: TokenStream,
-        _other2: TokenStream,
+/// Receives `[_sumtrait_internal!] ENTRY* { context }`: the definitions of every `#[sumtype]`
+/// bound (and, after further rounds, of their supertraits), and emits the impls.
+pub fn sumtrait_internal(input: announce::helper::Input) -> Result<TokenStream> {
+    let ctx = Context::parse(&input)?;
+    let krate = &ctx.krate;
+
+    // Fetch the supertraits that have not arrived yet with one more trampoline round: a single
+    // longer continuation list instead of one recursive call per supertrait.
+    let needed = ctx.bounds.iter().map(|b| b.0.clone()).chain(
+        input
+            .entries_in_order()
+            .filter_map(|e| Some((e, trait_of(e)?)))
+            .flat_map(|(e, item)| supertraits_of(e, &item, krate)),
+    );
+    if let Gather::Fetch(ts) = input.gather(needed.map(Cont::bang).collect::<Vec<_>>()) {
+        return Ok(ts);
     }
-    let trait_ident_and_other: TraitIdentAndOther = parse2(input).unwrap();
-    let implementation = if let Type::Path(TypePath { path, .. }) = implementation {
-        path
-    } else {
-        // No `implement = ...`: this is a user `#[sumtrait]`, so implement the trait itself. Use
-        // the trait's OWN ident rather than the passed-in `trait_path` — for a supertrait
-        // recursion the latter is the *parent* trait, which would generate `impl <Parent> for Enum`
-        // containing the child's methods (E0407). The trait must be in scope (by its bare name) at
-        // the `#[sumtype]` expansion site.
-        Path::from(item_trait.ident.clone())
-    };
+
+    // All definitions are here. One node per implemented trait, so a trait reached twice (a
+    // repeated bound, or a supertrait diamond) is implemented once. User traits are keyed by
+    // their trampoline's path (the entry `Cont`), so two different traits with the same name
+    // stay apart.
+    let mut nodes: Vec<Node> = Vec::new();
+    let mut node_of_impl: HashMap<String, usize> = HashMap::new();
+    let mut node_of_key: HashMap<Cont, usize> = HashMap::new();
+    for e in input.entries_in_order() {
+        let node = node_of(e, krate)?;
+        let n = *node_of_impl
+            .entry(key_of(&node.implementation))
+            .or_insert_with(|| {
+                nodes.push(node);
+                nodes.len() - 1
+            });
+        node_of_key.insert(e.key.clone(), n);
+    }
+    // Constraint traits: a bound's node takes the bound's name (used by the `sumtype!(..)`
+    // expression check); a repeated bound gets an alias; supertrait-only nodes get fresh names.
+    let mut cts: Vec<Option<Ident>> = vec![None; nodes.len()];
+    let mut aliases: Vec<(Ident, usize)> = Vec::new();
+    for Bound(p, _, ct) in &ctx.bounds {
+        let n = node_of_key[&Cont::bang(p.clone())];
+        if cts[n].is_none() {
+            cts[n] = Some(ct.clone());
+        } else {
+            aliases.push((ct.clone(), n));
+        }
+    }
+    let cts: Vec<Ident> = cts
+        .into_iter()
+        .enumerate()
+        .map(|(n, ct)| {
+            ct.unwrap_or_else(|| {
+                Ident::new(
+                    &format!("__SumTrait_ConstraintTrait_{}_{}", n, random()),
+                    Span::call_site(),
+                )
+            })
+        })
+        .collect();
+    let ty_generics_base = &ctx.ty_generics_base;
+    let ty_generics_enum = ctx
+        .ty_generics_base
+        .iter()
+        .map(|a| quote!(#a))
+        .chain(ctx.unspecified_ty_params.iter().map(|i| quote!(#i)))
+        .collect::<Vec<_>>();
+    let where_clause_base = &ctx.where_clause_base;
+    let enum_path = &ctx.enum_path;
+    Ok(quote! {
+        #(for (n, node) in nodes.iter().enumerate()) {
+            #{
+                let super_cts = node
+                    .supertraits
+                    .iter()
+                    .map(|s| cts[node_of_key[&Cont::bang(s.clone())]].clone())
+                    .collect::<Vec<_>>();
+                emit_node(&ctx, node, &cts[n], &super_cts)
+            }
+        }
+        #(for (alias, n) in &aliases) {
+            #[allow(non_camel_case_types)]
+            trait #alias<#{&ctx.impl_generics_base}> {}
+            impl<
+                #(for p in &ctx.impl_generics_base) { #p, }
+                #(for p in &ctx.unspecified_ty_params) { #p, }
+            > #alias<#ty_generics_base> for #enum_path<#(#ty_generics_enum),*>
+            where
+                #where_clause_base
+                #(if !where_clause_base.is_empty()) { , }
+                Self: #{&cts[*n]}<#ty_generics_base>,
+            {}
+        }
+    })
+}
+
+/// The constraint trait and the dispatching impl for one trait definition.
+fn emit_node(
+    ctx: &Context,
+    node: &Node,
+    constraint_expr_trait_ident: &Ident,
+    supertraits_constraint_traits: &[Ident],
+) -> TokenStream {
+    let Context {
+        enum_path,
+        unspecified_ty_params,
+        variants,
+        impl_generics_base,
+        ty_generics_base,
+        where_clause_base,
+        ..
+    } = ctx;
+    let Node {
+        item_trait,
+        implementation,
+        supertraits,
+    } = node;
     let mut impl_generics_merged = item_trait
         .generics
         .params
         .iter()
-        .chain(&impl_generics_base)
+        .chain(impl_generics_base)
         .collect::<Vec<_>>();
     sort_impl_generics(impl_generics_merged.as_mut_slice());
-    let impl_generics_base = arr_to_ts(&impl_generics_base).collect::<Vec<_>>();
+    let impl_generics_base = arr_to_ts(impl_generics_base).collect::<Vec<_>>();
     let assoc_types = item_trait
         .items
         .iter()
         .filter_map(|item| match item {
             TraitItem::Type(c) => Some((
                 Ident::new(
-                    &format!("__SumType_AssocType_{}", &c.ident),
+                    &format!("__SumType_AssocType_{}", c.ident),
                     Span::call_site(),
                 ),
                 c.clone(),
@@ -368,14 +479,8 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
         })
         .collect::<Vec<_>>();
     let (_, ty_generics_trait, _) = split_for_impl(Some(&item_trait.generics));
-    let mapped_typerefs: HashMap<Type, usize> = typerefs
-        .iter()
-        .cloned()
-        .enumerate()
-        .map(|(l, r)| (r, l))
-        .collect();
     let ty_generics_base = ty_generics_base
-        .into_iter()
+        .iter()
         .map(|a| quote!(#a))
         .collect::<Vec<_>>();
     let ty_generics_enum = ty_generics_base
@@ -389,29 +494,15 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
         .chain(assoc_types.iter().map(|(c, _)| quote!(#c)))
         .chain(unspecified_ty_params.iter().map(|ident| quote!(#ident)))
         .collect::<Vec<_>>();
-    let supertraits_constraint_traits = (0..supertraits.len())
-        .map(|n| {
-            Ident::new(
-                &format!("__SumTrait_ConstraintTrait_{}_{}", n, random()),
-                Span::call_site(),
-            )
-        })
-        .collect::<Vec<_>>();
     quote! {
-        #(for (supertrait, constraint_trait) in supertraits.iter().zip(&supertraits_constraint_traits)) {
-            #supertrait!(
-                #constraint_trait,
-                #{&trait_ident_and_other.other}
-            );
-        }
         #[allow(non_camel_case_types)]
         trait #constraint_expr_trait_ident<#(#impl_generics_base),*> {}
         impl<#(#impl_generics),*> #constraint_expr_trait_ident<#(#ty_generics_base),*>
             for #enum_path <#(#ty_generics_enum),*>
          where
             #where_clause_base
-            #(if !where_clause_base.to_string().is_empty()) { , }
-            #(for IdentAndType{ty, ..} in &variants) {
+            #(if !where_clause_base.is_empty()) { , }
+            #(for IdentAndType{ty, ..} in variants) {
                 #ty: #implementation<
                     #(#ty_generics_trait),*
                     #(if !ty_generics_trait.is_empty() && !assoc_types.is_empty()) { , }
@@ -420,7 +511,7 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
                     }
                 >,
             }
-            #(for constraint_trait in &supertraits_constraint_traits) {
+            #(for constraint_trait in supertraits_constraint_traits) {
                 Self: #constraint_trait<#(#ty_generics_base),*>,
             }
         { }
@@ -428,8 +519,8 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
             for #enum_path<#(#ty_generics_enum),*>
         where
             #where_clause_base
-            #(if !where_clause_base.to_string().is_empty()) { , }
-            #(for IdentAndType{ty, ..} in &variants) {
+            #(if !where_clause_base.is_empty()) { , }
+            #(for IdentAndType{ty, ..} in variants) {
                 #ty: #implementation<
                     #(#ty_generics_trait),*
                     #(if !ty_generics_trait.is_empty() && !assoc_types.is_empty()) { , }
@@ -438,7 +529,7 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
                     }
                 >,
             }
-            #(for supertrait in &supertraits) {
+            #(for supertrait in supertraits) {
                 Self: #supertrait,
             }
         {
@@ -450,17 +541,7 @@ pub fn sumtrait_internal(input: TokenStream) -> TokenStream {
             #(for f in item_trait.items.iter().filter_map(|item| {
                 if let TraitItem::Fn(f) = item { Some(f) } else { None }}
             )) {
-                #{process_fn(
-                    f,
-                    &mapped_typerefs,
-                    &variants,
-                    &ty_generics_trait,
-                    &enum_path,
-                    &krate,
-                    &marker_path,
-                    &implementation,
-                    &typeref_id
-                )}
+                #{process_fn(f, variants, &ty_generics_trait, enum_path, implementation)}
             }
         }
     }

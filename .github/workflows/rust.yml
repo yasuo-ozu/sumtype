@@ -11,13 +11,13 @@ env:
 
 jobs:
   msrv:
-    name: MSRV (1.56.0)
+    name: MSRV (1.57.0)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@1.56.0
-    # Only `cargo check` at the MSRV: it verifies the library targets compile on 1.56 without
-    # building the test suite (the tests use newer-than-1.56 syntax, which is dev-only).
+    - uses: dtolnay/rust-toolchain@1.57.0
+    # Only `cargo check` at the MSRV (announce's): it verifies the library targets compile on 1.57
+    # without building the test suite (the tests use newer-than-1.57 syntax, which is dev-only).
     - name: cargo check
       run: cargo check --workspace --verbose
 

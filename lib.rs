@@ -11,6 +11,11 @@ struct CompileFailCases;
 #[doc(hidden)]
 pub use sumtype_macro::_sumtrait_internal;
 
+#[doc(hidden)]
+pub mod __private {
+    pub use ::announce;
+}
+
 /// Makes a user-defined trait usable with `#[sumtype]`.
 ///
 /// ## Arguments
@@ -20,7 +25,8 @@ pub use sumtype_macro::_sumtrait_internal;
 ///   mock trait that mirrors it.
 /// - `krate` (optional) — the path to the `sumtype` crate (default: `::sumtype`).
 /// - `marker` — the absolute path of an empty type, defined in the same crate as the trait and
-///   visible to the crates that will use the trait with `#[sumtype]`.
+///   visible to the crates that will use the trait with `#[sumtype]`. (Currently unused: the trait
+///   is passed to `#[sumtype]` by its [announce](https://docs.rs/announce) trampoline instead.)
 ///
 /// ## Supertraits
 ///
@@ -91,11 +97,6 @@ pub use sumtype_macro::sumtrait;
 /// ```
 pub use sumtype_macro::sumtype;
 
-#[doc(hidden)]
-pub trait TypeRef<const RANDOM: usize, const N: usize> {
-    type Type: ?Sized;
-}
-
 /// Recovers a concrete type `To` from a `#[sumtype]` sum type.
 ///
 /// An implementation is generated automatically for every sum type produced by `#[sumtype]`.
@@ -137,124 +138,38 @@ pub trait Downcast<To: 'static>: Sized {
 
 /// Mock traits targeted by the `#[sumtype]` macro. They make the corresponding `std`/`core` traits
 /// usable with `#[sumtype]`.
+///
+/// Each item here is an [announce](https://docs.rs/announce) trampoline (the `X!` macro) that hands the
+/// trait's signature to `#[sumtype]`. All of them come from `announce-std` and name the real std
+/// trait in the type namespace. For `Debug`, `Hash`, `Clone` and `Copy`, whose names are also derive
+/// macros, that holds from rustc 1.94 (a glob re-export); on older compilers the name is a blanket
+/// subtrait of the real trait, which works in bounds as the local mock traits did before.
 pub mod traits {
-    use super::sumtrait;
+    /// Target of [`crate::sumtype`] macro, which implements [`std::io::Read`].
+    pub use ::announce_std::io::Read;
 
-    #[doc(hidden)]
-    #[allow(non_camel_case_types)]
-    trait __SumTrait_Sealed {}
+    /// Target of [`crate::sumtype`] macro, which implements [`std::iter::Iterator`].
+    pub use ::announce_std::iter::Iterator;
 
-    macro_rules! emit_traits {
-        () => {
-            #[doc(hidden)]
-            pub struct Marker(::core::convert::Infallible);
+    /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Display`].
+    pub use ::announce_std::fmt::Display;
 
-            /// Target of [`crate::sumtype`] macro, which implements [`std::io::Read`].
-            #[sumtrait(implement = ::std::io::Read, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Read {
-                fn read(&mut self, buf: &mut [::core::primitive::u8]) -> ::std::io::Result<::core::primitive::usize>;
-            }
+    /// Target of [`crate::sumtype`] macro, which implements [`std::error::Error`].
+    pub use ::announce_std::error::Error;
 
-            impl<T: ::std::io::Read> Read for T {
-                fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-                    T::read(self, buf)
-                }
-            }
+    /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Debug`].
+    pub use ::announce_std::fmt::Debug;
 
-            /// Target of [`crate::sumtype`] macro, which implements [`std::iter::Iterator`].
-            #[sumtrait(implement = ::core::iter::Iterator, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Iterator {
-                type Item;
-                fn next(&mut self) -> ::core::option::Option<Self::Item>;
-            }
+    /// Target of [`crate::sumtype`] macro, which implements [`std::hash::Hash`].
+    ///
+    /// The generated sum type forwards `hash` to the active variant (no discriminant is mixed in).
+    /// The enum does not implement `Eq`/`PartialEq`, so there is no equality relation for the hash
+    /// to be inconsistent with.
+    pub use ::announce_std::hash::Hash;
 
-            impl<T: ::core::iter::Iterator> Iterator for T {
-                type Item = T::Item;
-                fn next(&mut self) -> Option<Self::Item> {
-                    T::next(self)
-                }
-            }
+    /// Target of [`crate::sumtype`] macro, which implements [`std::marker::Copy`].
+    pub use ::announce_std::marker::Copy;
 
-            /// Target of [`crate::sumtype`] macro, which implements [`std::marker::Copy`].
-            #[sumtrait(implement = ::core::marker::Copy, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Copy: $crate::traits::Clone {
-            }
-
-            impl<T: ::core::marker::Copy> Copy for T {}
-
-            /// Target of [`crate::sumtype`] macro, which implements [`std::clone::Clone`].
-            #[sumtrait(implement = ::core::clone::Clone, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Clone {
-                fn clone(&self) -> Self;
-            }
-
-            impl<T: ::core::clone::Clone> Clone for T {
-                fn clone(&self) -> Self {
-                    T::clone(self)
-                }
-            }
-
-            /// Target of [`crate::sumtype`] macro, which implements [`std::hash::Hash`].
-            ///
-            /// The generated sum type forwards `hash` to the active variant (no discriminant is
-            /// mixed in). The enum does not implement `Eq`/`PartialEq`, so there is no equality
-            /// relation for the hash to be inconsistent with.
-            #[sumtrait(implement = ::core::hash::Hash, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Hash {
-                fn hash<H: ::core::hash::Hasher>(&self, state: &mut H);
-            }
-
-            impl<T: ::core::hash::Hash> Hash for T {
-                fn hash<H: ::core::hash::Hasher>(&self, state: &mut H) {
-                    T::hash(self, state)
-                }
-            }
-
-            /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Display`].
-            #[sumtrait(implement = ::core::fmt::Display, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Display {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result;
-            }
-
-            impl<T: ::core::fmt::Display> Display for T {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    T::fmt(self, f)
-                }
-            }
-
-            /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Debug`].
-            #[sumtrait(implement = ::core::fmt::Debug, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Debug {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result;
-            }
-
-            impl<T: ::core::fmt::Debug> Debug for T {
-                fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-                    T::fmt(self, f)
-                }
-            }
-
-            /// Target of [`crate::sumtype`] macro, which implements [`std::error::Error`].
-            #[sumtrait(implement = ::std::error::Error, krate = $crate, marker = $crate::traits::Marker)]
-            #[allow(private_bounds)]
-            pub trait Error: $crate::traits::Debug + $crate::traits::Display {
-                fn source(&self) -> ::core::option::Option<&(dyn ::std::error::Error + 'static)>;
-            }
-
-            impl<T: ::std::error::Error> Error for T {
-                fn source(&self) -> ::core::option::Option<&(dyn ::std::error::Error + 'static)> {
-                    T::source(self)
-                }
-            }
-
-        };
-    }
-    emit_traits!();
+    /// Target of [`crate::sumtype`] macro, which implements [`std::clone::Clone`].
+    pub use ::announce_std::clone::Clone;
 }

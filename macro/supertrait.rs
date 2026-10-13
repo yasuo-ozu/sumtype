@@ -1,13 +1,11 @@
 //! The `#[sumtrait]` machinery: analyzing a user trait's supertraits, collecting the leaked types
-//! it references, and generating the per-trait dispatch `macro_rules!`.
+//! it references, and marking the trait `#[announce]` so `#[sumtype]` can fetch its definition.
 
-use crate::generics::random;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use proc_macro_error::abort;
 use syn::spanned::Spanned;
 use syn::*;
 use template_quote::quote;
-use type_leak::*;
 
 /// The standard-library traits that have a `sumtype::traits::*` mock, keyed by the `(module, Trait)`
 /// segments of their canonical `core`/`std` path. Used to recognize a *qualified* supertrait path
@@ -28,11 +26,9 @@ const BUILTIN_SUPERTRAITS: &[(&str, &str)] = &[
 /// Used to avoid mis-mapping a user `#[sumtrait]` whose module/name merely collides with a std
 /// trait (e.g. `crate::hash::Hash`, `mymod::fmt::Debug`) to the std-backed mock.
 fn is_std_rooted(path: &Path) -> bool {
-    path.segments
-        .first()
-        .map_or(false, |s| {
-            matches!(s.ident.to_string().as_str(), "core" | "std" | "alloc")
-        })
+    path.segments.first().map_or(false, |s| {
+        matches!(s.ident.to_string().as_str(), "core" | "std" | "alloc")
+    })
 }
 
 /// If `path` denotes a built-in mock-able std/core trait, returns the `sumtype::traits::*` ident it
@@ -78,7 +74,7 @@ fn unsupported_eq_supertrait(path: &Path) -> Option<Ident> {
     }
 }
 
-fn process_supported_supertraits<'a>(
+pub(crate) fn process_supported_supertraits<'a>(
     traits: impl IntoIterator<Item = &'a TypeParamBound>,
     krate: &Path,
 ) -> Vec<Path> {
@@ -122,23 +118,16 @@ fn process_supported_supertraits<'a>(
     supertraits
 }
 
-fn collect_typeref_types(input: &ItemTrait) -> Vec<Type> {
-    let mut leaker = Leaker::from_trait(input).unwrap_or_else(|_| Leaker::new());
-    leaker.self_ty_can_be_interned = false;
-    leaker
-        .finish()
-        .iter()
-        .cloned()
-        .collect()
-}
-
-pub(crate) fn sumtrait_impl(
-    args: Option<Path>,
-    marker_path: &Path,
-    krate: &Path,
-    input: ItemTrait,
-) -> TokenStream {
-    let supertraits = process_supported_supertraits(&input.supertraits, krate);
+/// Emits the trait and its trampoline. `#[sumtype]` resolves the trait's paths at its own site
+/// (as it always did), so the announced payload is the trait wrapped in a module of the same
+/// name: announce does not run its type-context check on inline modules, which would reject
+/// relative trait bounds such as `trait T: Base` or `fn f<W: Write>(..)` even with a `repeater`
+/// (type-leak cannot intern trait bounds). `emit_item = false`: only the trampoline is emitted;
+/// the receiver unwraps the module (`sumtrait_internal::trait_of`).
+pub(crate) fn sumtrait_impl(args: Option<Path>, krate: &Path, input: ItemTrait) -> TokenStream {
+    // Validate the supertraits at the definition site (rejects `Eq`/`PartialEq`, non-trait
+    // bounds). The mapping itself is redone by `#[sumtype]` from the fetched definition.
+    let _ = process_supported_supertraits(&input.supertraits, krate);
     for item in &input.items {
         match item {
             TraitItem::Const(_) => abort!(item.span(), "associated const is not supported"),
@@ -161,37 +150,17 @@ pub(crate) fn sumtrait_impl(
             o => abort!(o.span(), "Not supported"),
         }
     }
-    let temporary_mac_name =
-        Ident::new(&format!("__sumtype_macro_{}", random()), Span::call_site());
-    let typeref_types = collect_typeref_types(&input);
-    let (_, _, where_clause) = input.generics.split_for_impl();
-    let typeref_id = random() as usize;
+    let announce = quote!(#krate::__private::announce);
+    let (vis, ident) = (&input.vis, &input.ident);
     quote! {
         #input
-        #(for (i, ty) in typeref_types.iter().enumerate()) {
-            impl<#(for p in &input.generics.params),{#p}> #krate::TypeRef<#typeref_id, #i> for #marker_path #where_clause {
-                type Type = #ty;
-            }
-        }
-
-        #[doc(hidden)]
-        #[macro_export]
-        macro_rules! #temporary_mac_name {
-            ($($t:tt)*) => {
-                #krate::_sumtrait_internal!(
-                    { $($t)* }
-                    /* typerefs= */  [#(#typeref_types),*],
-                    /* item_trait= */  {#input},
-                    /* typeref_id= */  #typeref_id,
-                    /* krate= */  #krate,
-                    /* marker_path= */ #marker_path,
-                    /* implementation= */  [#{args.map(|m| quote!(#m)).unwrap_or(quote!(_))}],
-                    /* supertraits= */ [#(#supertraits),*],
-                );
-            };
-        }
-        #[doc(hidden)]
-        #{&input.vis} use #temporary_mac_name as #{&input.ident};
+        // The trampoline: `#[announce]` emits the `TraitName!` macro. `implement = ..` rides
+        // along in the entry META (`meta = ..` is never invoked).
+        #[#announce::announce(
+            crate = #announce,
+            emit_item = false,
+            #(if let Some(m) = &args) { meta = sumtrait_meta(implement = #m), }
+        )]
+        #vis mod #ident { #input }
     }
 }
-

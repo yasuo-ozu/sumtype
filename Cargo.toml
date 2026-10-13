@@ -8,7 +8,7 @@ homepage = "https://github.com/yasuo-ozu/sumtype"
 documentation = "https://docs.rs/sumtype"
 readme = "README.md"
 edition = "2021"
-rust-version = "1.56.0"
+rust-version = "1.57"
 keywords = ["macros", "zerocost", "enum", "union-type", "iterator"]
 categories = ["data-structures", "memory-management", "rust-patterns"]
 license = "MIT"
@@ -18,6 +18,8 @@ path = "lib.rs"
 
 [dependencies]
 sumtype-macro = { path = "macro", version = "0.4.1" }
+announce = "0.1.0"
+announce-std = "0.1.0"
 
 [dev-dependencies]
 trybuild = "1.0"

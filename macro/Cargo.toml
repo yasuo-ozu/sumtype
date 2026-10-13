@@ -7,7 +7,7 @@ repository = "https://github.com/yasuo-ozu/sumtype"
 homepage = "https://github.com/yasuo-ozu/sumtype"
 documentation = "https://docs.rs/sumtype"
 edition = "2021"
-rust-version = "1.56.0"
+rust-version = "1.57"
 keywords = ["macros", "zerocost", "enum", "union-type", "iterator"]
 categories = ["data-structures", "memory-management", "rust-patterns"]
 license = "MIT"
@@ -24,7 +24,7 @@ proc-macro-crate = "1"
 derive-syn-parse = "0.1.5"
 darling = "0.20.10"
 syn_derive = "0.1.8"
-type-leak = "0.7"
+announce = "0.1.0"
 
 [dependencies.syn]
 version = "2.0"
