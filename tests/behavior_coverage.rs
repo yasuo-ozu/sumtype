@@ -9,7 +9,7 @@
 use std::io::Read;
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Read)]
+#[sumtype(::announce_std::io::Read)]
 fn make_reader(which: u8) -> impl Read {
     match which {
         0 => sumtype!(std::io::Cursor::new(vec![1u8, 2, 3, 4])),
@@ -18,7 +18,7 @@ fn make_reader(which: u8) -> impl Read {
     }
 }
 
-#[sumtype(sumtype::traits::Iterator + sumtype::traits::Clone)]
+#[sumtype(::announce_std::iter::Iterator + ::announce_std::clone::Clone)]
 fn make_iter(a: usize) -> impl Iterator<Item = usize> + Clone {
     match a {
         0 => sumtype!(std::iter::empty::<usize>()),
@@ -27,7 +27,7 @@ fn make_iter(a: usize) -> impl Iterator<Item = usize> + Clone {
     }
 }
 
-#[sumtype(sumtype::traits::Copy)]
+#[sumtype(::announce_std::marker::Copy)]
 fn make_copy(b: bool) -> impl Copy {
     if b {
         sumtype!(1i8)

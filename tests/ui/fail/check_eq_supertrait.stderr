@@ -1,0 +1,5 @@
+error: `Eq` is not supported as a supertrait of a `#[sumtype]` trait (the generated sum type cannot derive it; supported supertraits are `Copy`, `Clone`, `Hash`, `Debug`, `Display`, `Error`, `Iterator`, `Read`, and other announced traits)
+ --> tests/ui/fail/check_eq_supertrait.rs:4:30
+  |
+4 | pub trait MyEq: ::core::cmp::Eq {}
+  |                              ^^

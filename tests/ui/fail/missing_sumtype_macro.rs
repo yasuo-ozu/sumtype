@@ -1,6 +1,6 @@
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn missing_macro(flag: bool) -> impl Iterator<Item = u32> {
     // Missing sumtype!() macro should cause compilation error
     if flag {

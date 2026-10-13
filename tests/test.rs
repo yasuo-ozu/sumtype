@@ -3,7 +3,7 @@
 #![allow(clippy::manual_repeat_n)]
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn generate_iter<'a, T>(t: &'a T, count: usize) -> impl Iterator<Item = &'a T> {
     match count {
         0 => sumtype!(std::iter::empty()),
@@ -12,7 +12,7 @@ fn generate_iter<'a, T>(t: &'a T, count: usize) -> impl Iterator<Item = &'a T> {
     }
 }
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn generate_iter_explicit<'a, T: 'a>(t: &'a T, count: usize) -> sumtype!() {
     match count {
         0 => sumtype!(std::iter::empty(), std::iter::Empty<&'a T>),

@@ -1,0 +1,5 @@
+error: announce: trait paths must be absolute (`::core::fmt::Display`, `crate::Base`; `Sized` and `?Sized` may be bare); a repeater only covers types, not traits
+ --> tests/ui/fail/relative_supertrait.rs:6:16
+  |
+6 | pub trait Sub: Base {}
+  |                ^^^^

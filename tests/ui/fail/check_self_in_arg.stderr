@@ -1,0 +1,5 @@
+error: Cannot use `Self` type here. Only `Self`, `&Self`, `&mut Self` is supported.
+ --> tests/ui/fail/check_self_in_arg.rs:5:44
+  |
+5 |     fn f(&self, v: ::core::option::Option<&Self>);
+  |                                            ^^^^

@@ -59,7 +59,7 @@ impl<T> Parametrized<0> for S<T> {
 
 }
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 impl<T> Parametrized<0usize> for E<T> {
     type Item = T;
     type Iter <'__parametrized_lt > = sumtype! ['__parametrized_lt] where

@@ -19,7 +19,7 @@ impl fmt::Display for TestStructB {
     }
 }
 
-#[sumtype(sumtype::traits::Debug)]
+#[sumtype(::announce_std::fmt::Debug)]
 fn get_debug(use_a: bool) -> impl std::fmt::Debug {
     if use_a {
         sumtype!(TestStructA(42))
@@ -28,7 +28,7 @@ fn get_debug(use_a: bool) -> impl std::fmt::Debug {
     }
 }
 
-#[sumtype(sumtype::traits::Display)]
+#[sumtype(::announce_std::fmt::Display)]
 fn get_display(use_a: bool) -> impl std::fmt::Display {
     if use_a {
         sumtype!(TestStructA(42))
@@ -61,7 +61,7 @@ fn test_display_trait() {
 
 #[test]
 fn test_mixed_primitives() {
-    #[sumtype(sumtype::traits::Display)]
+    #[sumtype(::announce_std::fmt::Display)]
     fn get_mixed_display(use_int: bool) -> impl std::fmt::Display {
         if use_int {
             sumtype!(42i32)

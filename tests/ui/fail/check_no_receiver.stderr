@@ -1,0 +1,5 @@
+error: `#[sumtype]` requires a receiver (`self`, `&self` or `&mut self`) as the first parameter
+ --> tests/ui/fail/check_no_receiver.rs:5:8
+  |
+5 |     fn new() -> u8;
+  |        ^^^

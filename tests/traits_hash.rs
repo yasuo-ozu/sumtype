@@ -1,4 +1,4 @@
-//! `sumtype::traits::Hash` as a direct target trait. The generated sum type implements
+//! `::announce_std::hash::Hash` as a direct target trait. The generated sum type implements
 //! `std::hash::Hash` by forwarding `hash` to the active variant.
 
 use std::hash::{Hash, Hasher};
@@ -10,7 +10,7 @@ fn hash_of<T: Hash>(t: &T) -> u64 {
     h.finish()
 }
 
-#[sumtype(sumtype::traits::Hash)]
+#[sumtype(::announce_std::hash::Hash)]
 fn make(b: bool) -> impl Hash {
     if b {
         sumtype!(1u32)

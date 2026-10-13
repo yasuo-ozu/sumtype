@@ -1,5 +1,7 @@
 use super::{random, split_for_impl};
-use crate::supertrait::process_supported_supertraits;
+use crate::supertrait::{
+    process_supported_supertraits, reject_generic_supertraits, validate_trait,
+};
 use announce::helper::{Cont, Entry, Gather, KvArgs};
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
@@ -80,7 +82,7 @@ fn has_self_ty(ty: &Type) -> Option<Span> {
     visitor.0
 }
 
-fn generate_fn_args(
+pub(crate) fn generate_fn_args(
     sig: &Signature,
     self_arg_id: &Ident,
 ) -> (Vec<(FnArg, Ident)>, Option<Ident>, bool) {
@@ -93,7 +95,7 @@ fn generate_fn_args(
                 if let Some(recv) = &recv {
                     abort!(
                         recv.span().join(receiver.span()).unwrap_or(receiver.span()),
-                        "Cannot have multiple Self type inputs in sumtrait function signature."
+                        "Cannot have multiple Self type inputs in a trait method signature."
                     )
                 } else {
                     recv = Some(ident.clone());
@@ -103,17 +105,17 @@ fn generate_fn_args(
             FnArg::Typed(pt) => {
                 let ident = match pt.pat.as_ref() {
                     Pat::Ident(pi) if &pi.ident != "_" => pi.ident.clone(),
-                    _ => Ident::new(&format!("__sumtrait_arg_{}", n), pt.span()),
+                    _ => Ident::new(&format!("__sumtype_arg_{}", n), pt.span()),
                 };
                 // Check if supported Self type?
                 if pt.ty.as_ref() == &parse_quote!(Self)
                     || pt.ty.as_ref() == &parse_quote!(&Self)
                     || pt.ty.as_ref() == &parse_quote!(&mut Self)
                 {
-                    if let Some(recv) = &recv {
+                    if recv.is_some() {
                         abort!(
-                            recv.span().join(pt.ty.span()).unwrap_or(pt.ty.span()),
-                            "Cannot have multiple Self type inputs in sumtrait function signature."
+                            pt.pat.span(),
+                            "Cannot have multiple Self type inputs in a trait method signature."
                         )
                     } else {
                         recv = Some(ident.clone());
@@ -159,7 +161,7 @@ fn process_fn(
     enum_path: &Path,
     implementation: &Path,
 ) -> TokenStream {
-    let self_arg_ident = Ident::new("__sumtrait_self_arg", Span::call_site());
+    let self_arg_ident = Ident::new("__sumtype_self_arg", Span::call_site());
     let (args, recv, return_is_self) = generate_fn_args(&item_fn.sig, &self_arg_ident);
     let (fn_impl_generics, _, fn_where_clause) = item_fn.sig.generics.split_for_impl();
     // Forward the method's own type/const generics to the dispatched call as a turbofish, so a
@@ -243,7 +245,7 @@ where
 struct Node {
     item_trait: ItemTrait,
     implementation: Path,
-    /// Supertraits as `#[sumtype]` invokes them (built-ins mapped to `krate::traits::*`).
+    /// Supertraits as `#[sumtype]` invokes them (built-ins mapped to their `announce-std` mocks).
     supertraits: Vec<Path>,
 }
 
@@ -251,7 +253,7 @@ fn key_of(p: &Path) -> String {
     quote!(#p).to_string()
 }
 
-/// Supertraits of a fetched definition, mapped as `#[sumtrait]` always did. The `Sized` of
+/// Supertraits of a fetched definition, with the built-in ones mapped to their mocks. The `Sized` of
 /// announce-std's `Clone` mock is dropped (every sum type is `Sized`).
 fn supertraits_of(entry: &Entry, item: &ItemTrait, krate: &Path) -> Vec<Path> {
     let supers = process_supported_supertraits(
@@ -261,14 +263,7 @@ fn supertraits_of(entry: &Entry, item: &ItemTrait, krate: &Path) -> Vec<Path> {
         }),
         krate,
     );
-    for p in &supers {
-        if p.segments.iter().any(|s| !s.arguments.is_empty()) {
-            abort!(
-                p.span(),
-                "generic supertraits are not supported by `#[sumtrait]`"
-            );
-        }
-    }
+    reject_generic_supertraits(&supers);
     supers
 }
 
@@ -281,9 +276,11 @@ fn forwarded_by_mock(mock: &Path, f: &TraitItemFn) -> bool {
             && matches!(mock.segments.last(), Some(s) if s.ident == "Error"))
 }
 
-/// The trait of an entry: `#[sumtrait]` announces it wrapped in a same-named module (see
-/// `supertrait::sumtrait_impl`); announce-std mocks and third-party `#[announce]` traits announce
-/// the trait itself. A trait announced with `repeater = ..` has its relative types rewritten to
+/// The trait of an entry: an announced trait is delivered as written (announce-std mocks and
+/// `#[announce]` traits alike). A library that resolves the paths of a trait itself can announce
+/// a copy wrapped in an inline module of the same name (`#[announce(emit_item = false)] mod T {
+/// trait T {..} }`): its relative paths then resolve at the `#[sumtype]` site, and the module
+/// is unwrapped here. A trait announced with `repeater = ..` has its relative types rewritten to
 /// the repeater projections (its `type_leak` META), so they resolve here.
 fn trait_of(entry: &Entry) -> Option<ItemTrait> {
     let mut item = parse2::<Item>(entry.item.clone()).ok()?;
@@ -307,32 +304,28 @@ fn node_of(entry: &Entry, krate: &Path) -> Result<Node> {
     let mut item_trait: ItemTrait = trait_of(entry).unwrap_or_else(|| {
         abort!(
             entry.key.path().span(),
-            "`{}` is not a trait; `#[sumtype]` bounds must be `#[sumtrait]` traits or `sumtype::traits::*`",
+            "`{}` is not a trait; `#[sumtype]` bounds must be announced traits (`#[announce]`, or `announce_std::iter::Iterator` and the like)",
             key_of(&entry.key.path())
         )
     });
     let supertraits = supertraits_of(entry, &item_trait, krate);
-    let mut kv = entry
-        .find_meta("sumtrait_meta")
-        .map(|m| m.kv())
-        .transpose()?
-        .unwrap_or_default();
-    let implementation = match (entry.mock(), kv.get::<Path>("implement")?) {
-        // An `announce-std` mock: implement the real std trait.
-        (Some(mock), _) => {
+    let implementation = match entry.mock() {
+        // A mock (`announce-std`, or `#[announce(mock = path)]`): implement the real trait.
+        Some(mock) => {
             item_trait.items.retain(|i| match i {
                 TraitItem::Fn(f) => forwarded_by_mock(&mock, f),
                 _ => true,
             });
             mock
         }
-        // `#[sumtrait(implement = ..)]`
-        (None, Some(path)) => path,
-        // No `implement = ...`: this is a user `#[sumtrait]`, so implement the trait itself,
-        // by the path its trampoline was invoked through (it resolves at the `#[sumtype]` site).
-        _ => entry.key.path(),
+        // Otherwise implement the trait itself, by the path its trampoline was invoked through
+        // (it resolves at the `#[sumtype]` site). `sumtype::check` runs the same validation at
+        // the definition.
+        None => {
+            validate_trait(&item_trait, krate);
+            entry.key.path()
+        }
     };
-    kv.finish()?;
     Ok(Node {
         item_trait,
         implementation,
@@ -340,9 +333,9 @@ fn node_of(entry: &Entry, krate: &Path) -> Result<Node> {
     })
 }
 
-/// Receives `[_sumtrait_internal!] ENTRY* { context }`: the definitions of every `#[sumtype]`
+/// Receives `[_sumtype_internal!] ENTRY* { context }`: the definitions of every `#[sumtype]`
 /// bound (and, after further rounds, of their supertraits), and emits the impls.
-pub fn sumtrait_internal(input: announce::helper::Input) -> Result<TokenStream> {
+pub fn sumtype_internal(input: announce::helper::Input) -> Result<TokenStream> {
     let ctx = Context::parse(&input)?;
     let krate = &ctx.krate;
 

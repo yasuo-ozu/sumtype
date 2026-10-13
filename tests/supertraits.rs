@@ -1,19 +1,18 @@
-//! Coverage for `#[sumtrait]` supertrait analysis. A supertrait that is a built-in std/core trait
-//! is recognized and mapped to its `sumtype::traits::*` mock, whether written as a fully-qualified
-//! path (`std::fmt::Debug`) or — for traits reachable by name (e.g. the prelude `Clone`, or an
+//! Coverage for the supertrait analysis of announced traits. A supertrait that is a built-in std/core trait
+//! is recognized and mapped to its `announce-std` mock, whether written as a fully-qualified
+//! path (`::std::fmt::Debug`) or — for traits reachable by name (e.g. the prelude `Clone`, or an
 //! imported trait) — a bare ident. (Bare `Debug`/`Hash` are intentionally not exercised here: in
 //! bound position an unqualified `Debug`/`Hash` resolves to the prelude *derive macro*, a Rust
 //! scoping rule independent of sumtype, so users qualify them — which works, below.)
 
 #![allow(dead_code)]
 
-use sumtype::{sumtrait, sumtype};
+use sumtype::{announce::announce, sumtype};
 
 mod qualified_debug {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
-    trait Named: std::fmt::Debug {
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
+    trait Named: ::std::fmt::Debug {
         fn name(&self) -> &'static str;
     }
     #[derive(Debug)]
@@ -48,9 +47,8 @@ mod qualified_debug {
 mod qualified_display {
     use super::*;
     use std::fmt;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
-    trait Labeled: std::fmt::Display {}
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
+    trait Labeled: ::std::fmt::Display {}
     struct A;
     struct B;
     impl fmt::Display for A {
@@ -83,10 +81,9 @@ mod qualified_display {
 mod qualified_hash_and_debug {
     use super::*;
     use std::hash::{Hash, Hasher};
-    struct Marker;
     // Two qualified built-in supertraits at once.
-    #[sumtrait(marker = Marker)]
-    trait Keyish: std::fmt::Debug + std::hash::Hash {}
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
+    trait Keyish: ::std::fmt::Debug + ::std::hash::Hash {}
     #[derive(Debug, Hash)]
     struct A(u32);
     #[derive(Debug, Hash)]
@@ -115,9 +112,9 @@ mod qualified_hash_and_debug {
 
 mod bare_prelude_clone {
     use super::*;
-    // `Clone` is a prelude trait, so the bare ident resolves and maps to `traits::Clone`.
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    // `Clone` is a prelude trait, so the bare ident (allowed by `allow_std_prelude`) resolves and
+    // maps to `announce_std::clone::Clone`.
+    #[announce(crate = ::sumtype::announce, allow_std_prelude = true, sumtype::check)]
     trait Dup: Clone {
         fn tag(&self) -> u8;
     }

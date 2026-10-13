@@ -9,55 +9,106 @@
 struct CompileFailCases;
 
 #[doc(hidden)]
-pub use sumtype_macro::_sumtrait_internal;
+pub use sumtype_macro::_sumtype_internal;
+
+/// Re-export of the [`announce`](https://docs.rs/announce) crate, so that a crate can announce its
+/// traits for `#[sumtype]` without depending on `announce` itself:
+/// `#[sumtype::announce::announce(crate = ::sumtype::announce, sumtype::check)]`. The option
+/// `crate = ..` tells `#[announce]` where its runtime is; it is optional for a crate that depends on
+/// `announce` directly. See [`check`].
+pub use announce;
 
 #[doc(hidden)]
 pub mod __private {
-    pub use ::announce;
+    // The announced `std` traits that `#[sumtype]` maps built-in supertraits (`trait Foo: Debug`)
+    // to, reachable without the user depending on `announce-std`.
+    pub use ::announce_std;
 }
 
-/// Makes a user-defined trait usable with `#[sumtype]`.
+/// Checks a trait at its definition: it can be used with `#[sumtype]`.
 ///
-/// ## Arguments
+/// A trait is made usable with `#[sumtype]` by announcing it with the
+/// [`announce`](https://docs.rs/announce) attribute (re-exported as [`announce`]). `#[sumtype]`
+/// then reads the trait through its trampoline, so nothing else is needed. Without this check
+/// the trait is validated only when a `#[sumtype]` receives it, and the error appears there.
+/// List `sumtype::check` among the options of `#[announce]` to get the error at the trait:
 ///
-/// - `implement` (optional) — the real trait that the generated sum type should implement. Use it
-///   to make a `std` (or other third-party) trait compatible with `sumtype` by declaring a local
-///   mock trait that mirrors it.
-/// - `krate` (optional) — the path to the `sumtype` crate (default: `::sumtype`).
-/// - `marker` — the absolute path of an empty type, defined in the same crate as the trait and
-///   visible to the crates that will use the trait with `#[sumtype]`. (Currently unused: the trait
-///   is passed to `#[sumtype]` by its [announce](https://docs.rs/announce) trampoline instead.)
-///
-/// ## Supertraits
-///
-/// Supertraits are declared with the usual `trait Foo: Bar { ... }` syntax. Each supertrait must be
-/// either a built-in trait that `sumtype` recognizes (`Copy`, `Clone`, `Hash`, `Debug`, `Display`,
-/// `Error`, `Iterator`, `Read` — bare or via a `std`/`core` path) or another `#[sumtrait]` trait;
-/// referring to a custom trait by an absolute path is recommended.
-///
-/// ## Sumtrait-safety
-///
-/// Every trait annotated with `#[sumtrait]` must be *sumtrait-safe*. This is similar to object
-/// safety, but not identical.
-///
-/// A trait is called sumtrait-safe when it satisfies all of the following:
-///
-/// - The trait should not accept any generic arguments.
-/// - All supertraits of the trait are also sumtrait-safe and annotated with `#[sumtrait]`.
-/// - All trait items are either associated types or associated functions.
-/// - All associated functions must take a receiver (`self`, `&self`, or `&mut self`) as their
-///   first parameter. Additional parameters are allowed, but their types must not contain `Self`.
-/// - All associated functions should return the `Self` type, or a return type that does not
-///   contain `Self`.
 /// ```
-/// # use sumtype::sumtrait;
-/// pub struct Marker(::core::convert::Infallible);
-/// #[sumtrait(marker = Marker)] // In practice, `Marker` must be an absolute path beginning with `::`
-/// trait MyTrait {}
+/// use sumtype::{announce::announce, sumtype};
+///
+/// // `crate = ..` is needed when the crate does not depend on `announce` itself.
+/// #[announce(crate = ::sumtype::announce, allow_std_prelude = true, sumtype::check)]
+/// pub trait Greet {
+///     fn greet(&self) -> String;
+/// }
+///
+/// struct English;
+/// struct French;
+/// impl Greet for English {
+///     fn greet(&self) -> String { "hello".into() }
+/// }
+/// impl Greet for French {
+///     fn greet(&self) -> String { "bonjour".into() }
+/// }
+///
+/// #[sumtype(Greet)]
+/// fn pick(english: bool) -> impl Greet {
+///     if english { sumtype!(English) } else { sumtype!(French) }
+/// }
+/// assert_eq!(pick(false).greet(), "bonjour");
 /// ```
-pub use sumtype_macro::sumtrait;
+///
+/// A trait that does not satisfy the rules is rejected at its definition:
+///
+/// ```compile_fail
+/// use sumtype::announce::announce;
+/// #[announce(crate = ::sumtype::announce, sumtype::check)]
+/// pub trait Bad {
+///     fn new() -> u8; // no receiver
+/// }
+/// ```
+///
+/// ## What `#[sumtype]` supports in a trait
+///
+/// The trait is *sumtype-safe* when it satisfies all of the following (this is similar to object
+/// safety, but not identical). `sumtype::check` reports a violation at the item that causes it,
+/// and `#[sumtype]` reports it too when the trait was not checked:
+///
+/// - All trait items are either associated types or associated functions. Associated constants,
+///   associated type defaults and generic associated types are not supported.
+/// - All associated functions take a receiver (`self`, `&self`, or `&mut self`) as their first
+///   parameter. Additional parameters are allowed, but their types must not contain `Self`.
+/// - All associated functions return `Self`, or a type that does not contain `Self`.
+/// - Each supertrait is either a built-in trait that `sumtype` recognizes (`Copy`, `Clone`,
+///   `Hash`, `Debug`, `Display`, `Error`, `Iterator`, `Read`, written as a `std`/`core` path or,
+///   for `Copy` and `Clone`, bare) or another announced trait, written as an absolute path. A
+///   supertrait cannot have generic arguments, and `Eq`/`PartialEq` are rejected.
+///
+/// ## Paths in an announced trait
+///
+/// `#[announce]` hands the trait to other crates, so it requires every path in it to mean the same
+/// there. This is the rule of announce, not of `sumtype`; the consequences for a trait are:
+///
+/// - Traits (supertraits, bounds of generics) are written with absolute paths: `crate::Base`,
+///   `::core::fmt::Debug`. `trait Sub: Base` and `fn f<W: Write>(..)` are errors.
+/// - Types that are not primitive are absolute (`::std::string::String`, `crate::Local`) too,
+///   unless `allow_std_prelude = true` is given (then `String`, `Vec<u8>`, `Option<T>`, `Clone`
+///   and the like are fine) or the trait is announced with a `repeater` (which carries relative
+///   types to the other crate).
+///
+/// ## Making a std (or other third-party) trait usable
+///
+/// `#[announce(mock = ::core::fmt::Display)]` on a local trait that mirrors the real one makes
+/// `#[sumtype]` implement the real trait. The mirror lists the real trait's required methods;
+/// provided methods are not forwarded. [`announce-std`](https://docs.rs/announce-std) provides
+/// these mocks for the traits of `std`.
+pub use sumtype_macro::check;
 
 /// Enables the `sumtype!(..)` macro within the annotated context.
+///
+/// The bounds are announced traits, joined with `+`: the traits of `std` through `announce-std`
+/// (`::announce_std::iter::Iterator`, ...) and your own traits, announced with `#[announce]` (see
+/// [`check`]).
 ///
 /// For each context marked with `#[sumtype]`, the macro creates a single anonymous sum type that
 /// implements the trait(s) you specify. Wrap an expression with `sumtype!(expr)` to store it in
@@ -66,7 +117,7 @@ pub use sumtype_macro::sumtrait;
 /// ```
 /// # use sumtype::sumtype;
 /// # use std::iter::Iterator;
-/// #[sumtype(sumtype::traits::Iterator)]
+/// #[sumtype(::announce_std::iter::Iterator)]
 /// fn return_iter(a: bool) -> impl Iterator<Item = ()> {
 ///     if a {
 ///         sumtype!(std::iter::once(()))
@@ -86,7 +137,7 @@ pub use sumtype_macro::sumtrait;
 /// ```
 /// # use sumtype::sumtype;
 /// # use std::iter::Iterator;
-/// #[sumtype(sumtype::traits::Iterator)]
+/// #[sumtype(::announce_std::iter::Iterator)]
 /// fn return_iter_explicit(a: bool) -> sumtype!() {
 ///     if a {
 ///         sumtype!(std::iter::once(()), std::iter::Once<()>)
@@ -117,7 +168,7 @@ pub use sumtype_macro::sumtype;
 ///
 /// ```
 /// # use sumtype::{sumtype, Downcast};
-/// #[sumtype(sumtype::traits::Debug)]
+/// #[sumtype(::announce_std::fmt::Debug)]
 /// fn make(b: bool) -> impl std::fmt::Debug + Downcast<u32> + Downcast<String> {
 ///     if b { sumtype!(1u32) } else { sumtype!(String::from("hi")) }
 /// }
@@ -134,42 +185,4 @@ pub trait Downcast<To: 'static>: Sized {
     fn downcast_ref(&self) -> Option<&To>;
     /// Returns a mutable reference to the wrapped value if the active variant holds a `To`.
     fn downcast_mut(&mut self) -> Option<&mut To>;
-}
-
-/// Mock traits targeted by the `#[sumtype]` macro. They make the corresponding `std`/`core` traits
-/// usable with `#[sumtype]`.
-///
-/// Each item here is an [announce](https://docs.rs/announce) trampoline (the `X!` macro) that hands the
-/// trait's signature to `#[sumtype]`. All of them come from `announce-std` and name the real std
-/// trait in the type namespace. For `Debug`, `Hash`, `Clone` and `Copy`, whose names are also derive
-/// macros, that holds from rustc 1.94 (a glob re-export); on older compilers the name is a blanket
-/// subtrait of the real trait, which works in bounds as the local mock traits did before.
-pub mod traits {
-    /// Target of [`crate::sumtype`] macro, which implements [`std::io::Read`].
-    pub use ::announce_std::io::Read;
-
-    /// Target of [`crate::sumtype`] macro, which implements [`std::iter::Iterator`].
-    pub use ::announce_std::iter::Iterator;
-
-    /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Display`].
-    pub use ::announce_std::fmt::Display;
-
-    /// Target of [`crate::sumtype`] macro, which implements [`std::error::Error`].
-    pub use ::announce_std::error::Error;
-
-    /// Target of [`crate::sumtype`] macro, which implements [`std::fmt::Debug`].
-    pub use ::announce_std::fmt::Debug;
-
-    /// Target of [`crate::sumtype`] macro, which implements [`std::hash::Hash`].
-    ///
-    /// The generated sum type forwards `hash` to the active variant (no discriminant is mixed in).
-    /// The enum does not implement `Eq`/`PartialEq`, so there is no equality relation for the hash
-    /// to be inconsistent with.
-    pub use ::announce_std::hash::Hash;
-
-    /// Target of [`crate::sumtype`] macro, which implements [`std::marker::Copy`].
-    pub use ::announce_std::marker::Copy;
-
-    /// Target of [`crate::sumtype`] macro, which implements [`std::clone::Clone`].
-    pub use ::announce_std::clone::Clone;
 }

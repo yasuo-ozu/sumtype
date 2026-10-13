@@ -1,5 +1,8 @@
 # `sumtype` audit
 
+> Historical record. It predates the announce port: `sumtype::traits::*` is now `::announce_std::*`
+> and `#[sumtrait]` is now `#[announce]` with `sumtype::check` (see the README).
+
 Audit of the `sumtype` / `sumtype-macro` crates (rustc 1.90 stable, edition 2021). Every finding
 below was reproduced against the actual compiler; the confirming command or diagnostic is quoted.
 Most findings have since been **fixed** — see the Status column and the

@@ -4,7 +4,7 @@
 use sumtype::sumtype;
 
 // Was: const generics produced `PhantomData<>` in the `__Uninhabited` variant (E0107).
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn const_generic<const N: usize>(b: bool) -> impl Iterator<Item = usize> {
     if b {
         sumtype!(0..N)
@@ -15,7 +15,7 @@ fn const_generic<const N: usize>(b: bool) -> impl Iterator<Item = usize> {
 
 // Was: a `for<'a, T>` that repeats the enclosing free function's own generics produced duplicate
 // parameter names (E0403) and a double-counted enum instantiation (E0107).
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn repeated_generics<'a, T: 'a>(t: &'a T, b: bool) -> sumtype!['a, T] {
     if b {
         sumtype!(std::iter::once(t), for<'a, T: 'a> std::iter::Once<&'a T>)
@@ -41,7 +41,7 @@ fn for_generics_repeating_fn_generics_work() {
 }
 
 // Coverage: const generic combined with a lifetime on the enclosing item (impl-Trait return form).
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn const_and_lifetime<'a, const N: usize>(x: &'a u32, b: bool) -> impl Iterator<Item = u32> + 'a {
     if b {
         sumtype!(std::iter::repeat(*x).take(N))
@@ -58,7 +58,7 @@ fn const_plus_lifetime_generics_work() {
 }
 
 // Coverage: a 3-bound `#[sumtype(A + B + C)]` (the per-bound constraint-trait/dispatch loop with N>2).
-#[sumtype(sumtype::traits::Iterator + sumtype::traits::Clone + sumtype::traits::Debug)]
+#[sumtype(::announce_std::iter::Iterator + ::announce_std::clone::Clone + ::announce_std::fmt::Debug)]
 fn three_bounds(a: u8) -> impl Iterator<Item = u8> + Clone + std::fmt::Debug {
     match a {
         0 => sumtype!(std::iter::empty::<u8>()),

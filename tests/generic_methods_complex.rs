@@ -1,20 +1,18 @@
-//! Generic `#[sumtrait]` methods with *complex* generic parameter lists: multiple type params,
+//! Generic methods of announced traits with *complex* generic parameter lists: multiple type params,
 //! where-clauses with associated-type bounds, higher-ranked trait bounds, dependent bounds with a
 //! turbofish-only return generic, and mixed lifetime/type/const generics (including const in the
 //! return type). All exercise the turbofish-forwarding dispatch.
 
-// The `Marker` types are type-level markers, never constructed.
 #![allow(dead_code)]
 
-use sumtype::{sumtrait, sumtype};
+use sumtype::{announce::announce, sumtype};
 
 mod multiple_type_params {
     use super::*;
     use std::fmt::Display;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, allow_std_prelude = true, sumtype::check)]
     trait Combine {
-        fn combine<T: Display, U: Display>(&self, t: T, u: U) -> String;
+        fn combine<T: ::core::fmt::Display, U: ::core::fmt::Display>(&self, t: T, u: U) -> String;
     }
     struct A;
     struct B;
@@ -45,8 +43,7 @@ mod multiple_type_params {
 
 mod where_clause_assoc_type {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, allow_std_prelude = true, sumtype::check)]
     trait Total {
         fn total<I>(&self, it: I) -> u32
         where
@@ -87,8 +84,7 @@ mod where_clause_assoc_type {
 
 mod higher_ranked_bound {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, allow_std_prelude = true, sumtype::check)]
     trait Apply {
         fn apply<F>(&self, f: F) -> usize
         where
@@ -129,8 +125,7 @@ mod higher_ranked_bound {
 
 mod dependent_turbofish_return {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, allow_std_prelude = true, sumtype::check)]
     trait Convert {
         fn convert<T, U: From<T>>(&self, t: T) -> U;
     }
@@ -163,8 +158,7 @@ mod dependent_turbofish_return {
 
 mod lifetime_type_const_mix {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, allow_std_prelude = true, sumtype::check)]
     trait Arr {
         fn arr<'a, T: Copy, const N: usize>(&self, x: T, tag: &'a str) -> ([T; N], &'a str);
     }

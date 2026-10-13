@@ -1,13 +1,13 @@
 //! A third-party `#[announce(repeater = ..)]` trait used as a `#[sumtype]` bound from another
 //! module: its relative types are rewritten with the entry's `type_leak` META.
 
-sumtype::__private::announce::define_repeater!(pub Repeater);
+sumtype::announce::define_repeater!(pub Repeater);
 
 pub mod defs {
     pub struct Local(pub u32);
 
-    #[sumtype::__private::announce::announce(
-        crate = sumtype::__private::announce,
+    #[sumtype::announce::announce(
+        crate = sumtype::announce,
         repeater = crate::Repeater
     )]
     pub trait Value {

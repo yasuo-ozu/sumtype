@@ -1,6 +1,6 @@
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn iter_example(flag: bool) -> impl Iterator<Item = u32> {
     if flag {
         sumtype!(std::iter::once(42))
@@ -9,7 +9,7 @@ fn iter_example(flag: bool) -> impl Iterator<Item = u32> {
     }
 }
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn explicit_types(flag: bool) -> sumtype!() {
     if flag {
         sumtype!(std::iter::once(42), std::iter::Once<u32>)

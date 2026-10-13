@@ -1,0 +1,5 @@
+error: Cannot have multiple Self type inputs in a trait method signature.
+ --> tests/ui/fail/check_self_twice.rs:5:17
+  |
+5 |     fn f(&self, other: &Self);
+  |                 ^^^^^

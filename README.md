@@ -41,7 +41,7 @@ The same functions written with `sumtype`:
 use sumtype::sumtype;
 
 // Iterator example
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn conditional_iterator(flag: bool) -> impl Iterator<Item = i32> {
     if flag {
         sumtype!(0..10) // Wraps the range iterator
@@ -51,7 +51,7 @@ fn conditional_iterator(flag: bool) -> impl Iterator<Item = i32> {
 }
 
 // Read example
-#[sumtype(sumtype::traits::Read)]
+#[sumtype(::announce_std::io::Read)]
 fn conditional_reader(use_cursor: bool) -> impl std::io::Read {
     if use_cursor {
         sumtype!(std::io::Cursor::new(b"hello world"))
@@ -59,6 +59,15 @@ fn conditional_reader(use_cursor: bool) -> impl std::io::Read {
         sumtype!(std::io::Cursor::new(vec![1, 2, 3, 4, 5]))
     }
 }
+```
+
+The traits of `std` are named through [`announce-std`](https://docs.rs/announce-std), which you
+add to your `Cargo.toml` next to `sumtype`:
+
+```toml
+[dependencies]
+sumtype = "0.4"
+announce-std = "0.1"
 ```
 
 Here `#[sumtype]` generates a sum type that can hold any of the concrete types implementing the specified trait, and `sumtype!` wraps each expression so they share that type within the function. Because the sum type is a plain enum, it avoids heap allocation, and when the branch is known at compile time the compiler optimizes the abstraction away.
@@ -100,7 +109,7 @@ automatically for every generated sum type. Name the target type(s) in the retur
 ```rust
 use sumtype::{sumtype, Downcast};
 
-#[sumtype(sumtype::traits::Debug)]
+#[sumtype(::announce_std::fmt::Debug)]
 fn make(b: bool) -> impl std::fmt::Debug + Downcast<u32> + Downcast<String> {
     if b { sumtype!(1u32) } else { sumtype!(String::from("hi")) }
 }
@@ -128,7 +137,7 @@ return or a field — also works and makes every target type available at once.)
 ```ignore
 # use sumtype::sumtype;
 # let some_condition = true;
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 let mut iter =  {
     if some_condition {
         sumtype!((0..5)) // Wraps the range iterator
@@ -151,7 +160,7 @@ Using `#[sumtype]` with a trait definition:
 
 ```
 # use sumtype::sumtype;
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 trait MyTrait {
     fn get_iterator(&self, flag: bool) -> impl Iterator<Item = i32> {
         if flag {
@@ -169,7 +178,7 @@ Using `#[sumtype]` on a trait and on an implementation of it for a concrete type
 
 ```
 # use sumtype::sumtype;
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 trait MyTrait {
     fn get_iterator(&self, flag: bool) -> impl Iterator<Item = i32> {
         if flag {
@@ -181,7 +190,7 @@ trait MyTrait {
 }
 struct StructA;
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 impl MyTrait for StructA {
     fn get_iterator(&self, _flag: bool) -> impl Iterator<Item = i32> {
         sumtype!((0..5)) // Wraps a range iterator
@@ -195,7 +204,7 @@ Using `#[sumtype]` with a module definition:
 
 ```ignore
 # use sumtype::sumtype;
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 mod my_module {
     pub struct MyStruct {
         iter: sumtype!(),
@@ -222,16 +231,25 @@ mod my_module {
 
 ## Supported Traits
 
-The `sumtype` crate provides built-in support for several common traits:
+`#[sumtype(Trait)]` reads the definition of `Trait` from its [announce](https://docs.rs/announce)
+trampoline. The traits of `std` are announced by [`announce-std`](https://docs.rs/announce-std), so
+you name them by their `announce_std` path (in the type namespace, `announce_std::iter::Iterator` is
+the real `std::iter::Iterator`):
 
-- **[`sumtype::traits::Iterator`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Iterator.html)** - For types implementing [`std::iter::Iterator`](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
-- **[`sumtype::traits::Read`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Read.html)** - For types implementing [`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html)  
-- **[`sumtype::traits::Clone`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Clone.html)** - For types implementing [`std::clone::Clone`](https://doc.rust-lang.org/std/clone/trait.Clone.html)
-- **[`sumtype::traits::Copy`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Copy.html)** - For types implementing [`std::marker::Copy`](https://doc.rust-lang.org/std/marker/trait.Copy.html)
-- **[`sumtype::traits::Hash`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Hash.html)** - For types implementing [`std::hash::Hash`](https://doc.rust-lang.org/std/hash/trait.Hash.html)
-- **[`sumtype::traits::Debug`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Debug.html)** - For types implementing [`std::fmt::Debug`](https://doc.rust-lang.org/std/fmt/trait.Debug.html)
-- **[`sumtype::traits::Display`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Display.html)** - For types implementing [`std::fmt::Display`](https://doc.rust-lang.org/std/fmt/trait.Display.html)
-- **[`sumtype::traits::Error`](https://docs.rs/sumtype/latest/sumtype/traits/trait.Error.html)** - For types implementing [`std::error::Error`](https://doc.rust-lang.org/std/error/trait.Error.html)
+- **`::announce_std::iter::Iterator`** - For types implementing [`std::iter::Iterator`](https://doc.rust-lang.org/std/iter/trait.Iterator.html)
+- **`::announce_std::io::Read`** - For types implementing [`std::io::Read`](https://doc.rust-lang.org/std/io/trait.Read.html)
+- **`::announce_std::clone::Clone`** - For types implementing [`std::clone::Clone`](https://doc.rust-lang.org/std/clone/trait.Clone.html)
+- **`::announce_std::marker::Copy`** - For types implementing [`std::marker::Copy`](https://doc.rust-lang.org/std/marker/trait.Copy.html)
+- **`::announce_std::hash::Hash`** - For types implementing [`std::hash::Hash`](https://doc.rust-lang.org/std/hash/trait.Hash.html)
+- **`::announce_std::fmt::Debug`** - For types implementing [`std::fmt::Debug`](https://doc.rust-lang.org/std/fmt/trait.Debug.html)
+- **`::announce_std::fmt::Display`** - For types implementing [`std::fmt::Display`](https://doc.rust-lang.org/std/fmt/trait.Display.html)
+- **`::announce_std::error::Error`** - For types implementing [`std::error::Error`](https://doc.rust-lang.org/std/error/trait.Error.html)
+
+Other traits of `announce-std` work the same way, as long as the generated sum type can implement
+them (see [Custom Traits](#custom-traits)). Several traits are joined with `+`:
+`#[sumtype(::announce_std::iter::Iterator + ::announce_std::clone::Clone)]`.
+
+The module `sumtype::traits` is gone: see [Changes in the announce port](#changes-in-the-announce-port).
 
 ### More Examples
 
@@ -240,7 +258,7 @@ The `sumtype` crate provides built-in support for several common traits:
 ```rust
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Read)]
+#[sumtype(::announce_std::io::Read)]
 fn get_reader(source: &str) -> impl std::io::Read {
     match source {
         "memory" => sumtype!(std::io::Cursor::new(b"Hello from memory")),
@@ -255,7 +273,7 @@ fn get_reader(source: &str) -> impl std::io::Read {
 ```rust
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Clone)]
+#[sumtype(::announce_std::clone::Clone)]
 fn get_cloneable(use_string: bool) -> impl Clone {
     if use_string {
         sumtype!(String::from("Hello"))
@@ -270,7 +288,7 @@ fn get_cloneable(use_string: bool) -> impl Clone {
 ```rust
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Debug)]
+#[sumtype(::announce_std::fmt::Debug)]
 fn get_debuggable(use_int: bool) -> impl std::fmt::Debug {
     if use_int {
         sumtype!(42i32)
@@ -279,7 +297,7 @@ fn get_debuggable(use_int: bool) -> impl std::fmt::Debug {
     }
 }
 
-#[sumtype(sumtype::traits::Display)]
+#[sumtype(::announce_std::fmt::Display)]
 fn get_displayable(use_int: bool) -> impl std::fmt::Display {
     if use_int {
         sumtype!(42i32)
@@ -325,7 +343,7 @@ impl fmt::Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
-#[sumtype(sumtype::traits::Error)]
+#[sumtype(::announce_std::error::Error)]
 fn get_error(is_io_error: bool) -> impl std::error::Error {
     if is_io_error {
         sumtype!(IoError("Failed to read file".to_string()))
@@ -350,18 +368,19 @@ handle_error(get_error(false));
 
 ## Custom Traits
 
-You can make your own traits work with `sumtype` using the [`#[sumtrait]`](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) attribute, which extends support to any trait that satisfies the sumtrait-safety requirements.
+A trait is made usable with `#[sumtype]` by announcing it with
+[`#[announce]`](https://docs.rs/announce): `sumtype` re-exports the `announce` crate as
+`sumtype::announce`, so a crate that depends only on `sumtype` writes
+`#[sumtype::announce::announce(crate = ::sumtype::announce)]` (the `crate = ..` option names the
+re-export; it can be left out when your crate depends on `announce` itself). List `sumtype::check`
+among the options to have the trait validated at its definition instead of at each `#[sumtype]`:
 
 ```rust
-use sumtype::{sumtype, sumtrait};
+use sumtype::{announce::announce, sumtype};
 
-// Define a marker type (required for sumtrait)
-pub struct MyTraitMarker(std::convert::Infallible);
-
-// Define your custom trait
-#[sumtrait(marker = MyTraitMarker)]
+#[announce(crate = ::sumtype::announce, sumtype::check)]
 pub trait MyCustomTrait {
-    fn process(&self) -> String;
+    fn process(&self) -> ::std::string::String;
 }
 
 // Implement the trait for different types
@@ -390,4 +409,109 @@ fn get_processor(use_a: bool) -> impl MyCustomTrait {
 }
 ```
 
-See the [`#[sumtrait]` documentation](https://docs.rs/sumtype/latest/sumtype/attr.sumtrait.html) for the full sumtrait-safety requirements and more advanced patterns for building custom sumtype-compatible traits.
+The trait can come from another crate: `#[sumtype(other_crate::MyCustomTrait)]`.
+
+### What the trait may contain
+
+`sumtype::check` rejects, at the item that causes it, what `#[sumtype]` cannot dispatch (and
+`#[sumtype]` rejects it too when the trait was not checked):
+
+- items other than methods and associated types (no associated constants, no associated type
+  defaults, no generic associated types);
+- a method without a receiver (`self`, `&self`, `&mut self`) as its first parameter;
+- a `Self` that cannot be dispatched: a parameter other than the receiver whose type contains
+  `Self`, or a return type that contains `Self` other than `Self` itself;
+- a supertrait that is generic (`Foo<T>`), is `Eq` or `PartialEq`, or is not a trait bound.
+
+A supertrait is either a built-in trait that `sumtype` recognizes (`Copy`, `Clone`, `Hash`,
+`Debug`, `Display`, `Error`, `Iterator`, `Read`, written as a `::std`/`::core` path) or another
+announced trait.
+
+### Paths in an announced trait
+
+`#[announce]` passes the trait to other crates, so announce requires every path in it to mean the
+same thing there. In practice:
+
+- Trait paths are absolute: `trait Sub: crate::Base`, `fn f<W: ::core::fmt::Write>(..)`. A bare
+  `Base` or `Write` is an error.
+- Non-primitive types are absolute too (`::std::string::String`, `crate::Local`), or the trait is
+  announced with `allow_std_prelude = true`, which lets the prelude names `String`, `Vec<u8>`,
+  `Option<T>`, `Clone`, `IntoIterator`, ... stay bare, or with a
+  [`repeater`](https://docs.rs/announce/latest/announce/attr.announce.html#type-context), which
+  carries the relative types of the defining crate to the user.
+- A library that wants the old behavior for a trait announces a copy of it, wrapped in an inline
+  module of the same name with `emit_item = false`. Only the trampoline is emitted, and the paths
+  in the copy resolve where `#[sumtype]` is used, so they must be in scope there:
+
+```rust
+use sumtype::{announce::announce, sumtype};
+use std::fmt::Write;
+
+pub trait Greet {
+    fn greet<W: Write>(&self, w: &mut W);
+}
+// The copy: `Greet!` is the trampoline, and `Write` resolves at the `#[sumtype]`.
+#[announce(crate = ::sumtype::announce, emit_item = false)]
+pub mod Greet {
+    pub trait Greet {
+        fn greet<W: Write>(&self, w: &mut W);
+    }
+}
+```
+
+### Implementing a `std` trait with a local mirror
+
+`#[announce(mock = path)]` on a trait that mirrors a real trait makes `#[sumtype]` implement the
+real trait at `path`. Only the required methods
+of the mirror are forwarded; the provided methods of the real trait are not. `announce-std` is a
+collection of such mirrors for `std`.
+
+```rust
+use sumtype::{announce::announce, sumtype};
+
+#[announce(crate = ::sumtype::announce, mock = ::core::fmt::Display)]
+pub trait MyDisplay {
+    fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result;
+}
+
+#[sumtype(MyDisplay)]
+fn show(a: bool) -> impl std::fmt::Display {
+    if a { sumtype!(1u8) } else { sumtype!("one") }
+}
+assert_eq!(show(false).to_string(), "one");
+```
+
+## The `announce` crate
+
+`sumtype` re-exports [`announce`](https://docs.rs/announce) as `sumtype::announce`: the attribute
+`#[sumtype::announce::announce]`, the helpers of `announce::helper` for writing your own callbacks
+and the like are available without a dependency on `announce` itself. Pass
+`crate = ::sumtype::announce` to the attribute in that case, as in the examples above.
+
+See the [`sumtype::check` documentation](https://docs.rs/sumtype/latest/sumtype/macro.check.html)
+for the full requirements and more advanced patterns for building custom sumtype-compatible traits.
+
+## Changes in the announce port
+
+`sumtype` now passes trait definitions with [announce](https://docs.rs/announce) trampolines. This
+is a breaking change for the users of 0.4.1 (the crate version is unchanged on this branch):
+
+- **`sumtype::traits` is removed.** Name the `std` traits through `announce-std` (add
+  `announce-std = "0.1"` to your `Cargo.toml`): `#[sumtype(::announce_std::iter::Iterator)]` instead
+  of `#[sumtype(sumtype::traits::Iterator)]`, and likewise `::announce_std::io::Read`,
+  `::announce_std::fmt::Debug`, `::announce_std::fmt::Display`, `::announce_std::error::Error`,
+  `::announce_std::hash::Hash`, `::announce_std::clone::Clone`, `::announce_std::marker::Copy`.
+- **`#[sumtrait]` is removed.** Announce the trait with `#[sumtype::announce::announce(crate =
+  ::sumtype::announce)]` (or `#[announce]` when your crate depends on `announce`). The options map
+  as follows:
+
+  | `#[sumtrait(..)]` | now |
+  | --- | --- |
+  | `marker = Path` | dropped (it was already unused) |
+  | `krate = path` | dropped (`#[sumtype]` finds `sumtype` itself); announce's `crate = path` names the announce runtime |
+  | `implement = path` | `#[announce(mock = path)]` |
+  | validation at the definition | `#[announce(sumtype::check)]` (new), and `#[sumtype]` validates the traits that were not checked |
+  | paths resolved where `#[sumtype]` is used | announce requires paths that resolve everywhere: absolute trait paths, `allow_std_prelude = true` or a `repeater` for types, or the module copy shown in [Custom Traits](#custom-traits) |
+
+- **New:** `sumtype::check` (validate a trait at its definition) and `sumtype::announce` (the
+  re-exported `announce` crate).

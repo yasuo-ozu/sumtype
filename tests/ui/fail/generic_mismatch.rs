@@ -1,6 +1,6 @@
 use sumtype::sumtype;
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn generic_mismatch(flag: bool) -> sumtype!['a] {
     if flag {
         // Missing lifetime parameter 'a

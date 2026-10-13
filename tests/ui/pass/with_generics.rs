@@ -2,7 +2,7 @@ use sumtype::sumtype;
 
 struct S;
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 impl S {
     fn with_lifetime<'a, T>(t: &'a T, count: usize) -> sumtype!['a, T] {
         if count == 0 {
@@ -16,7 +16,7 @@ impl S {
     }
 }
 
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 fn generic_fn<T: Clone>(value: T, repeat: bool) -> impl Iterator<Item = T> {
     if repeat {
         sumtype!(std::iter::repeat(value).take(3))

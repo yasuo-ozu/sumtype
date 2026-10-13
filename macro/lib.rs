@@ -1,5 +1,3 @@
-use darling::ast::NestedMeta;
-use darling::FromMeta;
 use derive_syn_parse::Parse;
 use proc_macro::TokenStream as TokenStream1;
 use proc_macro2::Span;
@@ -12,10 +10,9 @@ use syn::*;
 use template_quote::quote;
 
 mod generics;
-mod sumtrait_internal;
+mod sumtype_internal;
 mod supertrait;
 use generics::*;
-use supertrait::sumtrait_impl;
 
 /// Resolves the path to the `sumtype` crate, honoring a rename in the downstream `Cargo.toml`
 /// (e.g. `renamed = { package = "sumtype" }`). Falls back to `::sumtype` (which also covers the
@@ -37,8 +34,8 @@ struct Arguments {
 }
 
 /// Start the announce trampoline that fetches every `#[sumtype(A + B + ..)]` bound's definition:
-/// `A! { [A!, B!, .., krate::_sumtrait_internal!] { context } }`. Each trait macro prepends its
-/// entry and calls the next; `_sumtrait_internal` then receives all definitions at once (and
+/// `A! { [A!, B!, .., krate::_sumtype_internal!] { context } }`. Each trait macro prepends its
+/// entry and calls the next; `_sumtype_internal` then receives all definitions at once (and
 /// fetches supertraits with a further trampoline round when needed).
 #[allow(clippy::too_many_arguments)]
 fn gen_trait_impls(
@@ -55,7 +52,7 @@ fn gen_trait_impls(
         .iter()
         .map(|(p, _)| announce::helper::Cont::bang((*p).clone()))
         .chain(std::iter::once(announce::helper::Cont::bang(
-            parse_quote!(#krate::_sumtrait_internal),
+            parse_quote!(#krate::_sumtype_internal),
         )))
         .collect();
     list.invoke(quote! {
@@ -704,7 +701,7 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
     if args.bounds.is_empty() {
         abort!(
             Span::call_site(),
-            "`#[sumtype]` requires at least one trait bound, e.g. `#[sumtype(sumtype::traits::Iterator)]`"
+            "`#[sumtype]` requires at least one trait bound, e.g. `#[sumtype(::announce_std::iter::Iterator)]`"
         );
     }
     let public = Visibility::Public(Default::default());
@@ -742,37 +739,29 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
 announce::helper::callback! {
     #[doc(hidden)]
     #[proc_macro_error]
-    pub fn _sumtrait_internal(input) { sumtrait_internal::sumtrait_internal(input) }
+    pub fn _sumtype_internal(input) { sumtype_internal::sumtype_internal(input) }
 }
 
+/// The implementation of `sumtype::check`: validates a trait at its definition (see the docs of
+/// `sumtype::check`). Run by `#[announce(sumtype::check)]` as `check! { (), TRAIT }`.
 #[proc_macro_error]
-#[proc_macro_attribute]
-pub fn sumtrait(attr: TokenStream1, input: TokenStream1) -> TokenStream1 {
-    #[derive(FromMeta, Debug)]
-    struct SumtraitArgs {
-        implement: Option<Path>,
-        krate: Option<Path>,
-        /// Unused since `#[sumtrait]` announces the trait: it named the type that carried the
-        /// (always empty) `TypeRef` table. Still required, so existing code keeps compiling.
-        #[allow(dead_code)]
-        marker: Path,
-    }
-    let meta = NestedMeta::parse_meta_list(attr.into())
-        .unwrap_or_else(|e| abort!(e.span(), "invalid `#[sumtrait]` attribute: {}", e));
-    let args = SumtraitArgs::from_list(&meta).unwrap_or_else(|e| {
-        abort!(
-            Span::call_site(),
-            "invalid `#[sumtrait]` arguments: {} (a `marker = <path>` argument is required)",
-            e
-        )
-    });
-
-    let krate = args.krate.unwrap_or_else(sumtype_crate);
-    sumtrait_impl(
-        args.implement,
-        &krate,
-        parse(input).unwrap_or_else(|_| abort!(Span::call_site(), "Requires trait definition")),
-    )
+#[proc_macro]
+pub fn check(input: TokenStream1) -> TokenStream1 {
+    announce::helper::check(input.into(), &[], |c| match &c.item {
+        Item::Trait(item_trait) => {
+            supertrait::validate_trait(item_trait, &parse_quote!(::sumtype));
+            Ok(TokenStream::new())
+        }
+        other => Err(Error::new(
+            // The first token of the item (a single token, so that the position does not depend on
+            // whether the compiler can join spans).
+            template_quote::ToTokens::to_token_stream(other)
+                .into_iter()
+                .next()
+                .map_or_else(Span::call_site, |t| t.span()),
+            "`sumtype::check` applies to a trait definition",
+        )),
+    })
     .into()
 }
 

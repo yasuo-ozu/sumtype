@@ -1,0 +1,5 @@
+error: generic supertraits are not supported by `#[sumtype]`
+ --> tests/ui/fail/check_generic_supertrait.rs:4:42
+  |
+4 | pub trait GenericSuper: ::core::convert::AsRef<u8> {}
+  |                                          ^^^^^

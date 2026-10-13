@@ -1,20 +1,18 @@
-//! Coverage for `#[sumtrait]` traits with *generic* methods. The dispatch codegen forwards the
+//! Coverage for announced traits with *generic* methods. The dispatch codegen forwards the
 //! method's own generics to both the signature and (as a turbofish) the dispatched call, so a
 //! generic that is inferable from the arguments/return OR supplied only via turbofish (including a
 //! const generic) all resolve. The const-generic case used to fail with `E0284`.
 
-// The `Marker` types are type-level markers passed to `#[sumtrait(marker = ..)]`, never constructed.
 #![allow(dead_code)]
 
-use sumtype::{sumtrait, sumtype};
+use sumtype::{announce::announce, sumtype};
 
 mod arg_position {
     use super::*;
     use std::fmt::Write;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
     trait Greet {
-        fn greet<W: Write>(&self, w: &mut W);
+        fn greet<W: ::core::fmt::Write>(&self, w: &mut W);
     }
     struct A;
     struct B;
@@ -48,10 +46,9 @@ mod arg_position {
 mod by_value {
     use super::*;
     use std::fmt::Debug;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
     trait Foo {
-        fn foo<T: Debug>(&self, x: T) -> String;
+        fn foo<T: ::core::fmt::Debug>(&self, x: T) -> ::std::string::String;
     }
     struct A;
     struct B;
@@ -82,10 +79,9 @@ mod by_value {
 
 mod return_only {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
     trait Make {
-        fn make_default<T: Default>(&self) -> T;
+        fn make_default<T: ::core::default::Default>(&self) -> T;
     }
     struct A;
     struct B;
@@ -116,8 +112,7 @@ mod return_only {
 
 mod const_generic {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
     trait Idx {
         fn val<const N: usize>(&self) -> usize;
     }
@@ -150,8 +145,7 @@ mod const_generic {
 
 mod lifetime_generic {
     use super::*;
-    struct Marker;
-    #[sumtrait(marker = Marker)]
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
     trait Pick {
         fn pick<'x>(&self, s: &'x str) -> &'x str;
     }

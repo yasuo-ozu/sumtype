@@ -1,0 +1,5 @@
+error: only trait bounds are supported as `#[sumtype]` supertraits
+ --> tests/ui/fail/check_lifetime_supertrait.rs:4:26
+  |
+4 | pub trait LifetimeSuper: 'static {}
+  |                          ^^^^^^^

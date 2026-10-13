@@ -2,7 +2,7 @@
 use sumtype::sumtype;
 
 #[allow(unused)]
-#[sumtype(sumtype::traits::Iterator + sumtype::traits::Clone)]
+#[sumtype(::announce_std::iter::Iterator + ::announce_std::clone::Clone)]
 fn f(a: usize) -> impl Iterator<Item = usize> + Clone {
     match a {
         0 => sumtype!(std::iter::empty::<usize>()),

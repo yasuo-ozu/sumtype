@@ -1,5 +1,5 @@
 use sumtype::sumtype;
-#[sumtype(sumtype::traits::Iterator)]
+#[sumtype(::announce_std::iter::Iterator)]
 mod my_module {
     #[allow(unused)]
     pub struct MyStruct {

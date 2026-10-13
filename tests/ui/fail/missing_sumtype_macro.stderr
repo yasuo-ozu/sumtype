@@ -1,7 +1,7 @@
 error: Cannot find any sumtype!() in expr
  --> tests/ui/fail/missing_sumtype_macro.rs:3:1
   |
-3 | #[sumtype(sumtype::traits::Iterator)]
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+3 | #[sumtype(::announce_std::iter::Iterator)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   |
   = note: this error originates in the attribute macro `sumtype` (in Nightly builds, run with -Z macro-backtrace for more info)

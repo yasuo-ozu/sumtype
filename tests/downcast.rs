@@ -13,7 +13,7 @@ mod via_return_bound {
     use super::*;
 
     // Two downcast targets of distinct variant types; type-less `sumtype!(expr)` branches.
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn two_types(b: bool) -> impl std::fmt::Debug + Downcast<u32> + Downcast<String> {
         if b {
             sumtype!(1u32)
@@ -52,7 +52,7 @@ mod via_return_bound {
     }
 
     // Both branches use *literally the same* type-less `sumtype!(..)` args.
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn identical_branches(b: bool) -> impl std::fmt::Debug + Downcast<u32> {
         if b {
             sumtype!(1u32)
@@ -62,7 +62,7 @@ mod via_return_bound {
     }
 
     // Branches differ but resolve to values of the same type.
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn same_type_different_value(b: bool) -> impl std::fmt::Debug + Downcast<u32> {
         if b {
             sumtype!(10u32)
@@ -87,7 +87,7 @@ mod via_return_bound {
 mod via_named_type {
     use super::*;
 
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn make(which: u8) -> sumtype!() {
         match which {
             0 => sumtype!(1u32, u32),
@@ -136,7 +136,7 @@ mod via_named_type {
         e.downcast().ok()
     }
 
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn small(b: bool) -> sumtype!() {
         if b {
             sumtype!(10u8, u8)
@@ -152,7 +152,7 @@ mod via_named_type {
     }
 
     // Duplicate-typed variants, named form: literally identical branches.
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn identical_branches(b: bool) -> sumtype!() {
         if b {
             sumtype!(1u32, u32)
@@ -162,7 +162,7 @@ mod via_named_type {
     }
 
     // Distinct expressions resolving to the same type.
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn same_type_different_value(b: bool) -> sumtype!() {
         if b {
             sumtype!(10u32, u32)
@@ -172,7 +172,7 @@ mod via_named_type {
     }
 
     // Two same-typed variants plus a distinct one.
-    #[sumtype(sumtype::traits::Debug)]
+    #[sumtype(::announce_std::fmt::Debug)]
     fn mixed(which: u8) -> sumtype!() {
         match which {
             0 => sumtype!(1u32, u32),

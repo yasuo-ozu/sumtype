@@ -1,27 +1,24 @@
 //! Regression tests for the supertrait fixes found in the re-audit:
-//!  - user `#[sumtrait]` chaining (`Derived: Base`) now generates `impl Base`, not `impl Derived`
+//!  - user trait chaining (`Derived: Base`) now generates `impl Base`, not `impl Derived`
 //!    (was E0407 "method not a member of trait");
 //!  - a user trait whose *name* collides with a built-in (e.g. a user `Iterator`) used bare as a
-//!    supertrait is forwarded to the user's dispatch macro, not mis-mapped to `sumtype::traits::*`.
+//!    supertrait is forwarded to the user's dispatch macro, not mis-mapped to an `announce-std` mock.
 //!
-//! Note: a user supertrait referenced by a *qualified* path whose trait name is not in scope at the
-//! `#[sumtype]` site (e.g. `mymod::Foo`) is still unsupported — the generated `impl Foo for Enum`
-//! uses the bare name. Use the trait by a name in scope (import it, or define it at the same level).
+//! A user supertrait is written with an absolute path (`crate::mymod::Foo`), as announce requires.
 
 #![allow(dead_code)]
 
-use sumtype::{sumtrait, sumtype};
+use sumtype::{announce::announce, sumtype};
 
-// User `#[sumtrait]` chained as the supertrait of another user `#[sumtrait]`.
+// A user trait chained as the supertrait of another one.
 mod user_chain {
     use super::*;
-    struct M;
-    #[sumtrait(marker = M)]
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
     trait Base {
         fn base(&self) -> u32;
     }
-    #[sumtrait(marker = M)]
-    trait Derived: Base {
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
+    trait Derived: crate::user_chain::Base {
         fn derived(&self) -> u32;
     }
     struct A;
@@ -65,12 +62,11 @@ mod user_chain {
     }
 }
 
-// A user trait named `Iterator` (shadowing the prelude) used *bare* as a supertrait must be
-// forwarded to the user's dispatch macro, not mapped to `sumtype::traits::Iterator`.
+// A user trait named `Iterator` used as a supertrait must be forwarded to its own trampoline, not
+// mapped to `::announce_std::iter::Iterator`.
 mod bare_name_collision {
     use super::*;
-    struct M;
-    #[sumtrait(marker = M)]
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
     trait Iterator {
         fn my_step(&self) -> u8;
     }
@@ -86,8 +82,8 @@ mod bare_name_collision {
             9
         }
     }
-    #[sumtrait(marker = M)]
-    trait Stepper: Iterator {
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
+    trait Stepper: crate::bare_name_collision::Iterator {
         fn label(&self) -> &'static str;
     }
     impl Stepper for A {
@@ -122,9 +118,8 @@ mod bare_name_collision {
 mod std_error_supertrait {
     use super::*;
     use std::fmt;
-    struct M;
-    #[sumtrait(marker = M)]
-    trait AppError: std::error::Error {
+    #[announce(crate = ::sumtype::announce, sumtype::check)]
+    trait AppError: ::std::error::Error {
         fn code(&self) -> u32;
     }
     #[derive(Debug)]

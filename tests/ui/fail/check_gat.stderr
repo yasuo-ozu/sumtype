@@ -1,0 +1,5 @@
+error: generic associated types are not supported by `#[sumtype]`
+ --> tests/ui/fail/check_gat.rs:5:10
+  |
+5 |     type Item<'a>
+  |          ^^^^

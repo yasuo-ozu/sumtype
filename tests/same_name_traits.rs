@@ -1,20 +1,18 @@
-//! Two different `#[sumtrait]` traits with the same name are two nodes (keyed by the trampoline
+//! Two different announced traits with the same name are two nodes (keyed by the trampoline
 //! path, not the bare ident), and a qualified bound is implemented by that path.
 
 #![allow(dead_code)]
 
-use sumtype::{sumtrait, sumtype};
-
-pub struct M;
+use sumtype::{announce::announce, sumtype};
 
 mod a {
-    #[sumtype::sumtrait(marker = crate::M)]
+    #[sumtype::announce::announce(crate = ::sumtype::announce, sumtype::check)]
     pub trait Named {
         fn a_name(&self) -> &'static str;
     }
 }
 mod b {
-    #[sumtype::sumtrait(marker = crate::M)]
+    #[sumtype::announce::announce(crate = ::sumtype::announce, sumtype::check)]
     pub trait Named {
         fn b_name(&self) -> &'static str;
     }
@@ -54,13 +52,13 @@ fn make(x: bool) -> impl a::Named + b::Named {
 
 // A user supertrait reached through a qualified path.
 mod base {
-    #[sumtype::sumtrait(marker = crate::M)]
+    #[sumtype::announce::announce(crate = ::sumtype::announce, sumtype::check)]
     pub trait Base {
         fn base(&self) -> u8;
     }
 }
-#[sumtrait(marker = M)]
-trait Derived: base::Base {
+#[announce(crate = ::sumtype::announce, sumtype::check)]
+trait Derived: crate::base::Base {
     fn derived(&self) -> u8;
 }
 impl base::Base for X {

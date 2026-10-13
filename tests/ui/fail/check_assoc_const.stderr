@@ -1,0 +1,5 @@
+error: associated const is not supported by `#[sumtype]`
+ --> tests/ui/fail/check_assoc_const.rs:5:5
+  |
+5 |     const N: usize;
+  |     ^^^^^

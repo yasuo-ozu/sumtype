@@ -40,7 +40,7 @@ impl fmt::Display for NetworkError {
 impl std::error::Error for NetworkError {}
 
 // Test function that returns different error types
-#[sumtype(sumtype::traits::Error)]
+#[sumtype(::announce_std::error::Error)]
 fn get_error(error_type: &str) -> impl std::error::Error {
     match error_type {
         "io" => sumtype!(IoError("Failed to read file".to_string())),
@@ -131,7 +131,7 @@ fn test_error_in_result() {
 }
 
 // Test with explicit type annotation
-#[sumtype(sumtype::traits::Error)]
+#[sumtype(::announce_std::error::Error)]
 fn get_typed_error() -> sumtype!() {
     sumtype!(IoError("Explicit type".to_string()), IoError)
 }
