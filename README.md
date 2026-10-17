@@ -66,7 +66,7 @@ add to your `Cargo.toml` next to `sumtype`:
 
 ```toml
 [dependencies]
-sumtype = "0.5"
+sumtype = "0.6"
 announce-std = "0.2"
 ```
 
