@@ -736,14 +736,18 @@ fn inner(args: &Arguments, input: TokenStream) -> TokenStream {
     }
 }
 
-announce::helper::callback! {
-    #[doc(hidden)]
-    #[proc_macro_error]
-    pub fn _sumtype_internal(input) { sumtype_internal::sumtype_internal(input) }
+/// The callback of the trampoline that `#[sumtype]` starts (see `gen_trait_impls`). Internal.
+#[doc(hidden)]
+#[proc_macro_error]
+#[proc_macro]
+pub fn _sumtype_internal(input: TokenStream1) -> TokenStream1 {
+    announce::helper::callback(input.into(), sumtype_internal::sumtype_internal).into()
 }
 
 /// The implementation of `sumtype::check`: validates a trait at its definition (see the docs of
-/// `sumtype::check`). Run by `#[announce(sumtype::check)]` as `check! { (), TRAIT }`.
+/// `sumtype::check`). Run by `#[announce(sumtype::check)]` as
+/// `check! { @announce_format "1" (), TRAIT }`; `announce::helper::check` also answers the query
+/// for the attributes and accepts a call without the `@announce_format` prefix.
 #[proc_macro_error]
 #[proc_macro]
 pub fn check(input: TokenStream1) -> TokenStream1 {

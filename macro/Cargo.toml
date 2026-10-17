@@ -23,7 +23,7 @@ proc-macro-error = "1.0"
 proc-macro-crate = "1"
 derive-syn-parse = "0.1.5"
 syn_derive = "0.1.8"
-announce = "0.1.0"
+announce = "0.2.0"
 
 [dependencies.syn]
 version = "2.0"

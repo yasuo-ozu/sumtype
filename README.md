@@ -67,7 +67,7 @@ add to your `Cargo.toml` next to `sumtype`:
 ```toml
 [dependencies]
 sumtype = "0.5"
-announce-std = "0.1"
+announce-std = "0.2"
 ```
 
 Here `#[sumtype]` generates a sum type that can hold any of the concrete types implementing the specified trait, and `sumtype!` wraps each expression so they share that type within the function. Because the sum type is a plain enum, it avoids heap allocation, and when the branch is known at compile time the compiler optimizes the abstraction away.
@@ -497,7 +497,7 @@ for the full requirements and more advanced patterns for building custom sumtype
 is a breaking change for the users of 0.4:
 
 - **`sumtype::traits` is removed.** Name the `std` traits through `announce-std` (add
-  `announce-std = "0.1"` to your `Cargo.toml`): `#[sumtype(::announce_std::iter::Iterator)]` instead
+  `announce-std = "0.2"` to your `Cargo.toml`): `#[sumtype(::announce_std::iter::Iterator)]` instead
   of `#[sumtype(sumtype::traits::Iterator)]`, and likewise `::announce_std::io::Read`,
   `::announce_std::fmt::Debug`, `::announce_std::fmt::Display`, `::announce_std::error::Error`,
   `::announce_std::hash::Hash`, `::announce_std::clone::Clone`, `::announce_std::marker::Copy`.

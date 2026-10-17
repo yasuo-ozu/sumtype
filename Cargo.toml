@@ -18,8 +18,8 @@ path = "lib.rs"
 
 [dependencies]
 sumtype-macro = { path = "macro", version = "0.5.1" }
-announce = "0.1.0"
-announce-std = "0.1.0"
+announce = "0.2.0"
+announce-std = "0.2.0"
 
 [dev-dependencies]
 trybuild = "1.0"
